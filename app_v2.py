@@ -19,6 +19,7 @@ import smtplib
 from email.message import EmailMessage
 import os
 
+print("Hello")
 
 names = ["Chems"]
 usernames = ["Noen Seafood"]
