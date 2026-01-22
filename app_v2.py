@@ -3,21 +3,24 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import altair as alt
-from datetime import datetime, timedelta
+from datetime import datetime
 import requests
-from requests.auth import HTTPBasicAuth
 from io import BytesIO
 from PyPDF2 import PdfMerger
 import base64
-import json
 from gspread_dataframe import set_with_dataframe
 import plotly.graph_objects as go
 import streamlit_authenticator as stauth
 import pickle
 from pathlib import Path
-import smtplib
-from email.message import EmailMessage
+from filters import apply_date_filter, apply_country_filter, apply_source_filter, apply_invoice_status_filter, apply_product_family_filter
+from helpers import print_invoice, trigger_manual_refresh, send_email_invoice
+from analytics import calculate_customer_metrics, calculate_product_metrics
 import os
+from dotenv import load_dotenv
+
+
+load_dotenv('noenseafood.env')
 
 print("Hello")
 
@@ -304,7 +307,7 @@ if authentication_status:
         client = gspread.authorize(creds)
         
         sheet_id = os.getenv('SHEET_ID')
-        workbook = client.open_by_key(sheet_id)
+        workbook = client.open_by_key(sheet_id)  
         
         df_sales = pd.DataFrame(workbook.worksheet("OneUp - Invoices").get_all_records()).drop_duplicates()
         df_product = pd.DataFrame(workbook.worksheet("OneUp - Products").get_all_records()).drop_duplicates()
@@ -400,200 +403,6 @@ if authentication_status:
     df_sales_order_merged, df_invoices, df_product_sales_merged, df_product_clean = prepare_data(
         df_sales, df_product, df_transactions_sumup
     )
-
-    # ========== HELPER FUNCTIONS ==========
-    def print_invoice(invoice_id, format):
-        url = f"https://api.oneup.com/v1/invoices/{invoice_id}/print.{format}"
-        response = requests.get(url, auth=HTTPBasicAuth(API_EMAIL, API_KEY), verify=False)
-        
-        if response.status_code == 200:
-            if format == 'pdf':
-                with open(f"invoice_{invoice_id}.pdf", "wb") as f:
-                    f.write(response.content)
-                print("PDF saved successfully!")
-            elif format == 'json':
-                return json.loads(response.content)["url"]
-        else:
-            error = f"Error {response.status_code}: {response.text}"
-            return error
-
-
-    def trigger_manual_refresh():
-        token = os.getenv('GITHUB_API')           
-        owner = "haithemaoudia"
-        repo = "noen_data_pipeline"
-        workflow = "main.yml"                
-        branch = "main"                        
-
-        url = f"https://api.github.com/repos/{owner}/{repo}/actions/workflows/{workflow}/dispatches"
-
-        payload = {
-            "ref": branch,
-        }
-
-        headers = {
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "X-GitHub-Api-Version": "2022-11-28"
-        }
-
-        response = requests.post(url, headers=headers, data=json.dumps(payload))
-
-
-        if response.status_code == 204:
-            print("Workflow dispatched successfully!")
-        else:
-            print("Failed to trigger workflow:", response.status_code, response.text)
-
-    def send_email_invoice(file_data, email_sender, email_password, email_reciever, subject, body, invoice_number):
-        try:
-            msg = EmailMessage()
-            msg["Subject"] = subject
-            msg["From"] = email_sender
-            msg["To"] = email_reciever
-            msg.set_content(body)
-            
-            # Add PDF attachment from BytesIO data
-            msg.add_attachment(
-                file_data, 
-                maintype='application', 
-                subtype='pdf',
-                filename=f'invoice {invoice_number}.pdf'
-            )
-            
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-                server.login(email_sender, email_password)
-                server.send_message(msg)
-            
-            return True, "Email sent successfully!"
-        
-        except smtplib.SMTPAuthenticationError:
-            return False, "❌ Authentication failed. Please check your email and password/app password."
-        
-        except smtplib.SMTPRecipientsRefused:
-            return False, "❌ Recipient email address was refused. Please check the recipient email."
-        
-        except smtplib.SMTPException as e:
-            return False, f"❌ SMTP error occurred: {str(e)}"
-        
-        except Exception as e:
-            return False, f"❌ Unexpected error: {str(e)}"
-
-    # ========== FILTER FUNCTIONS ==========
-    def apply_date_filter(df, start_date, end_date, date_column='date'):
-        """Apply date filter efficiently"""
-        return df[(df[date_column] >= pd.to_datetime(start_date)) & 
-                (df[date_column] <= pd.to_datetime(end_date))]
-
-    def apply_country_filter(df, country):
-        """Apply country filter efficiently"""
-        if country != "All":
-            return df[df["country"] == country]
-        return df
-
-    def apply_source_filter(df, sources):
-        """Apply source filter efficiently"""
-        if sources:
-            return df[df["source"].isin(sources)]
-        return df
-
-    def apply_invoice_status_filter(df, status):
-        if set(status) == {"Paid", "Unpaid"} or not status:
-            return df
-    
-        if "Paid" in status and "Unpaid" not in status:
-            return df[df["paid"] != 0]
-        
-
-        if "Unpaid" in status and "Paid" not in status:
-            return df[df["paid"] == 0]
-        
-
-        return df
-
-    def apply_product_family_filter(df, family):
-            if len(family) == 0:
-                return df
-            else:
-                return df[df["item_family_name"].isin(family)]
-
-    # ========== ANALYTICS FUNCTIONS ==========
-    def calculate_customer_metrics(df):
-        """Calculate customer metrics"""
-        if len(df) == 0:
-            return pd.DataFrame(columns=["customer_name", "num_transactions", "total_revenue", "AOV", "transaction_frequency"])
-        
-        
-        metrics = (
-            df.groupby(["customer_name"], as_index=False)
-            .agg({
-                "id_x": "nunique",
-                "total_order_line": "sum"
-            })
-            .rename(columns={"id_x": "num_transactions", "total_order_line": "total_revenue"})
-        )
-        
-        metrics["AOV"] = metrics["total_revenue"] / metrics["num_transactions"]
-        metrics["transaction_frequency"] = metrics["num_transactions"] / metrics["total_revenue"]
-        
-        return metrics
-
-    def calculate_product_metrics(df, df_product):
-        """Calculate product metrics"""
-        if len(df) == 0:
-            return pd.DataFrame(columns=["product_name", "item_family_name", "quantity", "revenue", "gross_margin", "margin_%", "margin_contribution_%"])
-        
-        df_merged = df.merge(
-            df_product[["id", "purchase_price", "item_family_name"]],
-            how="left",
-            left_on="item_id",
-            right_on="id"
-        )
-
-    
-
-        
-        # df_merged = df_merged[df_merged["purchase_price"] > 0]
-        df_merged = df_merged[df_merged["product_name"] != '']
-        
-        df_merged["total_cost"] = df_merged["purchase_price"] * df_merged["quantity"]
-        df_merged["total_gross_margin"] = df_merged["total_order_line"] - df_merged["total_cost"]
-      
-        product_metrics = (
-            df_merged.groupby(["product_name", "item_family_name", "customer_name"], as_index=False)
-            .agg({
-                "quantity": "sum",
-                "total_order_line": "sum",
-                "total_gross_margin": "sum"
-            })
-            .rename(columns={"total_order_line": "revenue"})
-        )
-
-        
-        product_metrics["margin_%"] = (product_metrics["total_gross_margin"] / product_metrics["revenue"]) * 100
-        product_metrics = product_metrics[product_metrics["margin_%"] > 0]
-        product_metrics["margin_contribution_%"] = (
-            (product_metrics["total_gross_margin"] / product_metrics["total_gross_margin"].sum()) * 100
-        )
-        
-        return product_metrics
-
-
-    # ========= INVENTORY FUNCTIONS ============
-    def get_product_inventory(product_name:str):
-        scope = ["https://www.googleapis.com/auth/spreadsheets"]
-        creds = Credentials.from_service_account_info(google_cred, scopes=scope)
-        client = gspread.authorize(creds)
-        
-        sheet_id = os.getenv('SHEET_ID')
-        workbook = client.open_by_key(sheet_id)
-        sheet = workbook.worksheet("Product Inventory")
-        
-        row = sheet.find(product_name).row
-        quantity_available = sheet.get(f"X{row}")[0][0]
-        return int(quantity_available)
-
-
 
 
     #Update Inventory value for a given product name
@@ -1524,40 +1333,40 @@ if authentication_status:
                             default_subject = f"Factuur {invoice_id} - NOEN Seafood"
                             default_body = body = f"""
                             
-Beste {customer_name},,
+                            Beste {customer_name},
 
-Hartelijk dank voor uw samenwerking en bestelling. We stellen dit zeer op prijs.
+                            Hartelijk dank voor uw samenwerking en bestelling. We stellen dit zeer op prijs.
 
-In de bijlage vindt u de bijbehorende factuur met nummer {invoice_id}.
-Het totaalbedrag is €{total_amount:.2f}. We verzoeken u vriendelijk om deze te voldoen vóór {due_date}, onder vermelding van het factuurnummer.
-Mocht u vragen hebben over de factuur, of als er iets onduidelijk is, neem dan gerust contact met ons op. 
+                            In de bijlage vindt u de bijbehorende factuur met nummer {invoice_id}.
+                            Het totaalbedrag is €{total_amount:.2f}. We verzoeken u vriendelijk om deze te voldoen vóór {due_date}, onder vermelding van het factuurnummer.
+                            Mocht u vragen hebben over de factuur, of als er iets onduidelijk is, neem dan gerust contact met ons op. 
 
-We kijken graag met u mee en helpen u direct verder.
+                            We kijken graag met u mee en helpen u direct verder.
 
-We zien uw betaling tegemoet.
+                            We zien uw betaling tegemoet.
 
-Met vriendelijke groet,
+                            Met vriendelijke groet,
 
-Het team van NOEN Seafood
+                            Het team van NOEN Seafood
                             """
                         else:
                             default_subject = f"Facture {invoice_id} - NOEN Seafood"
                             default_body = f"""
-Cher/Chère {customer_name},
+                            Cher/Chère {customer_name},
 
-Nous vous remercions sincèrement pour votre collaboration et votre commande. Nous apprécions grandement la confiance que vous nous accordez.
+                            Nous vous remercions sincèrement pour votre collaboration et votre commande. Nous apprécions grandement la confiance que vous nous accordez.
 
-Veuillez trouver ci-joint la facture correspondante, portant le numéro {invoice_id}.
+                            Veuillez trouver ci-joint la facture correspondante, portant le numéro {invoice_id}.
 
-Le montant total s'élève à €{total_amount:.2f}. Nous vous prions aimablement de bien vouloir effectuer le règlement avant le {due_date}, en rappelant le numéro de facture en référence.
+                            Le montant total s'élève à €{total_amount:.2f}. Nous vous prions aimablement de bien vouloir effectuer le règlement avant le {due_date}, en rappelant le numéro de facture en référence.
 
-Si vous avez la moindre question concernant cette facture, ou si un point ne vous semble pas clair, n'hésitez surtout pas à nous contacter. Nous serons ravis d'examiner cela avec vous et de vous aider.
+                            Si vous avez la moindre question concernant cette facture, ou si un point ne vous semble pas clair, n'hésitez surtout pas à nous contacter. Nous serons ravis d'examiner cela avec vous et de vous aider.
 
-Nous vous remercions par avance pour votre règlement.
+                            Nous vous remercions par avance pour votre règlement.
 
-Cordialement,
+                            Cordialement,
 
-L'équipe NOEN Seafood
+                            L'équipe NOEN Seafood
                                 """
 
 
