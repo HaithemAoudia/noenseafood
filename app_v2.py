@@ -13,7 +13,7 @@ import plotly.graph_objects as go
 import streamlit_authenticator as stauth
 import pickle
 from pathlib import Path
-from filters import apply_date_filter, apply_country_filter, apply_source_filter, apply_invoice_status_filter, apply_product_family_filter
+from filters import apply_date_filter, apply_country_filter, apply_source_filter, apply_invoice_status_filter, apply_product_family_filter, apply_customer_filter, apply_product_filter, apply_invoice_filter
 from helpers import print_invoice, trigger_manual_refresh, send_email_invoice
 from analytics import calculate_customer_metrics, calculate_product_metrics
 import os
@@ -73,6 +73,20 @@ if authentication_status:
 
     email_sender = os.getenv('EMAIL_SENDER')
     email_password = os.getenv('EMAIL_PASSWORD')
+
+    google_cred = {
+    'type': os.getenv('TYPE'),
+    'project_id': os.getenv('PROJECT_ID'),
+    'private_key_id': os.getenv('PRIVATE_KEY_ID'),
+    'private_key': os.getenv('PRIVATE_KEY').replace('\\n', '\n') if os.getenv('PRIVATE_KEY') else None,
+    'client_email': os.getenv('CLIENT_EMAIL'),
+    'client_id': os.getenv('CLIENT_ID'),
+    'auth_uri': os.getenv('AUTH_URI'),
+    'token_uri': os.getenv('TOKEN_URI'),
+    'auth_provider_x509_cert_url': os.getenv('AUTH_PROVIDER_X509_CERT_URL'),
+    'client_x509_cert_url': os.getenv('CLIENT_X509_CERT_URL'),
+    'universe_domain': os.getenv('UNIVERSE_DOMAIN'),
+}
 
     st.markdown("""
     <style>
@@ -304,7 +318,7 @@ if authentication_status:
         df_product_inventory = pd.DataFrame(workbook.worksheet("Product Inventory").get_all_records()).drop_duplicates()
         return df_sales, df_product, df_customers, df_transactions_sumup, df_product_inventory_analysis, df_product_inventory
 
-
+    
     @st.cache_data(ttl=300, show_spinner=False)
     def prepare_data(_df_sales, _df_product, _df_transactions_sumup):
         """Prepare and transform data once - cached for performance"""
@@ -329,15 +343,26 @@ if authentication_status:
         df_sales_order = df_sales[
             ["invoice_id", "date", "paid", "total_order_line", "item_id", "customer_name", "country", "city", "source"]
         ].drop_duplicates()
-        
+
+        # Add product name to sales orders
+        df_sales_order = pd.merge(
+            df_sales_order,
+            df_product[["id", "name"]],
+            left_on="item_id",
+            right_on="id",
+            how="left"
+        ).drop(columns="id")
+        df_sales_order.rename(columns={"name": "product_name"}, inplace=True)
+
+
         # Create invoices metadata dataframe
         df_invoices = df_sales[
-            ["invoice_id", "customer_name", "country", "city", "date", "due_date", "amount", "sent", "paid", "source"]
-        ].drop_duplicates()
-        
+            ["invoice_id", "customer_name", "country", "city", "date", "due_date", "updated_at", "amount", "sent", "paid", "source"]
+        ].sort_values("updated_at", ascending=False).drop_duplicates("invoice_id")
+
         # SumUp sales
         df_sales_sumup = df_transactions_sumup[
-            ["id", "date", "total_price", "customer_name", "country", "city", "source"]
+            ["id", "date", "total_price", "product_name", "customer_name", "country", "city", "source"]
         ].drop_duplicates()
 
         df_sales_sumup.rename(columns={"total_price": "total_order_line"}, inplace=True)
@@ -391,6 +416,16 @@ if authentication_status:
         df_sales, df_product, df_transactions_sumup
     )
 
+   
+
+    customer_list = df_customers['full_name'].dropna().unique().tolist()
+
+    product_list = df_sales_order_merged['product_name'].dropna().unique().tolist()
+
+    invoice_ids_list = df_invoices['invoice_id'].dropna().unique().tolist()
+
+  
+
 
     #Update Inventory value for a given product name
     scope = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -440,7 +475,7 @@ if authentication_status:
         trigger_manual_refresh()
 
 
-    tab1, tab2, tab3, tab4 = st.tabs(["📈 Analytics", "📦 Inventory", "🚀 Forecast", "🧾 Invoice Manager"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Product Analytics", "👥 Customer Analytics", "📦 Inventory", "🚀 Forecast", "🧾 Invoice Manager"])
 
     # ========================================
     # TAB 1: ANALYTICS DASHBOARD
@@ -455,6 +490,11 @@ if authentication_status:
         min_date = df_sales_order_merged["date"].min()
         max_date = df_sales_order_merged["date"].max()
         today = datetime.today()
+
+        selected_customers = st.multiselect("Select Customer ", sorted(customer_list))
+
+        selected_products = st.multiselect("Select Product ", sorted(product_list))
+
 
         with col1:
             date_options = ["YTD","Past Month", "Q1", "Q2", "Q3", "Q4", "Custom Range"]
@@ -515,121 +555,14 @@ if authentication_status:
 
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # ========== APPLY FILTERS ==========
-        filtered_df = apply_date_filter(df_sales_order_merged, start_date, end_date)
-        filtered_df = apply_country_filter(filtered_df, selected_country)
-        filtered_df = apply_source_filter(filtered_df, source)
-        filtered_df = apply_invoice_status_filter(filtered_df, selected_status)
-        filtered_df = apply_product_family_filter(filtered_df, selected_product_family)
-        
-        # ========== CUSTOMER ANALYSIS ==========
-        st.header("👥 Customer Analytics")
-
-        # Calculate customer metrics using cached function
-        metrics = calculate_customer_metrics(filtered_df)
-
-        # Top customers
-        if not metrics.empty:
-            # top_revenue = metrics.nlargest(10, "total_revenue")
-            #Define Top 10 Using Group By and desc on Customer
-            
-
-
-            top_revenue = metrics.groupby('customer_name').agg({
-                        'total_revenue': 'sum',
-                        'num_transactions': 'sum',
-                        'AOV': 'mean'
-                    }).nlargest(10, 'total_revenue').reset_index()
-
-
-
-
-
-
-            top_transactions = metrics.groupby('customer_name').agg({
-                        'total_revenue': 'sum',
-                        'num_transactions': 'sum',
-                        'AOV': 'mean'
-                    }).nlargest(10, 'num_transactions').reset_index()
-            
-
-
-            # KPI Cards
-            col1, col2, col3, col4 = st.columns([0.6, 1, 0.5, 1])
-
-            with col1:
-                st.metric("💰 Total Revenue", f"€{metrics['total_revenue'].sum():,.0f}")
-
-            with col2:
-                name = top_revenue.iloc[0]['customer_name']
-                total_rev = top_revenue.iloc[0]['total_revenue']
-                st.metric("🏆 Top Customer", name, f"€{total_rev:,.0f}")
-            with col3:
-                st.metric("📦 Average Order Value", f"€{metrics['AOV'].mean():,.0f}")
-            with col4:
-                most_active = top_transactions.iloc[0]
-                name = most_active["customer_name"]
-                st.metric("🔄 Most Active Customer", name, f"{int(most_active['num_transactions'])} orders")
-            st.markdown("---")
-
-            # Charts
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.subheader("💰 Top 10 Customers by Revenue")
-                chart_revenue = (
-                    alt.Chart(top_revenue)
-                    .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
-                    .encode(
-                        x=alt.X("total_revenue:Q", title="Revenue (€)", axis=alt.Axis(format=".0f")),
-                        y=alt.Y("customer_name:N", sort="-x", title=None),
-                        color=alt.value("#10b981"),
-                        tooltip=[
-                            alt.Tooltip("customer_name:N", title="Customer"),
-                            alt.Tooltip("total_revenue:Q", title="Revenue", format=".2f"),
-                            alt.Tooltip("num_transactions:Q", title="Orders"),
-                            alt.Tooltip("AOV:Q", title="AOV", format=".2f")
-                        ]
-                    )
-                    .properties(height=400)
-                    .configure(background='#f0f9ff;')
-                )
-                st.altair_chart(chart_revenue, use_container_width=True)
-
-            with col2:
-                st.subheader("🔁 Top 10 by Transaction Count")
-                chart_transactions = (
-                    alt.Chart(top_transactions)
-                    .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
-                    .encode(
-                        x=alt.X("num_transactions:Q", title="Number of Transactions"),
-                        y=alt.Y("customer_name:N", sort="-x", title=None),
-                        color=alt.value("#3b82f6"),
-                        tooltip=[
-                            alt.Tooltip("customer_name:N", title="Customer"),
-                            alt.Tooltip("num_transactions:Q", title="Transactions"),
-                            alt.Tooltip("total_revenue:Q", title="Revenue", format=".2f"),
-                            alt.Tooltip("AOV:Q", title="AOV", format=".2f")
-                        ]
-                    )
-                    .properties(height=400)
-                    .configure(background='#f0f9ff;')
-                )
-                st.altair_chart(chart_transactions, use_container_width=True)
-
-        st.markdown("""
-#### **Revenue Calculations**
-- **Total Revenue** = Amount Paid − VAT Tax  
-- **Average Order Value (AOV)** = Total Revenue ÷ Number of Transactions  
-- **Transaction Count** = Sum of Invoice IDs  
-""")
-
         # ========== PRODUCT ANALYSIS ==========
         st.header("📦 Product Performance")
         # Apply filters to product data
         filtered_sales = apply_date_filter(df_product_sales_merged, start_date, end_date)
         filtered_sales = apply_country_filter(filtered_sales, selected_country)
         filtered_sales = apply_source_filter(filtered_sales, source)
+        filtered_sales = apply_customer_filter(filtered_sales, selected_customers)
+        filtered_sales = apply_product_filter(filtered_sales, selected_products)
         
 
         # Calculate product metrics using cached function
@@ -795,25 +728,304 @@ if authentication_status:
                 )
                 st.altair_chart(chart_margin, use_container_width=True)
 
-            st.subheader("Top 10 Customers by Gross Margin")
+
+
+        st.markdown("""
+    #### **Product Sales Calculations**
+    - **Units Sold by Product** = Sum of product sales order line quantity
+    - **Revenue Generated per Products** = Sum of Total Order Line                
+
+
+    #### **Gross Margin Calculations**
+    - **Total Cost** = Purchase Price × Quantity  
+    - **Total Gross Margin** = Total Order Line (Product Revenue *excl. VAT*) − Total Cost  
+    """)
+        
+
+
+    with tab2:
+        st.session_state.active_tab = "📈 Customer Analytics"
+        st.header("👥 Customer Analytics Dashboard")
+          # ========== FILTERS ==========
+        # st.markdown('<div class="filter-container">', unsafe_allow_html=True)
+        st.subheader("🔍 Filters")
+
+        col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 2])
+
+        min_date = df_sales_order_merged["date"].min()
+        max_date = df_sales_order_merged["date"].max()
+        today = datetime.today()
+
+        selected_customers = st.multiselect("Select Customer", sorted(customer_list))
+
+        selected_products = st.multiselect("Select Product", sorted(product_list))
+
+        with col1:
+            date_options = ["YTD","Past Month", "Q1", "Q2", "Q3", "Q4", "Custom Range"]
+            selected_range = st.selectbox("📅Date Range", date_options, index=0)
+
+            if selected_range == "YTD":
+                start_date = datetime(max_date.year, 1, 1)
+                end_date = max_date
+            
+            
+            elif selected_range == "Past Month":
+                start_date = max_date - pd.DateOffset(months=1)
+                end_date = max_date
+                
+
+            elif selected_range == "Q1":
+                start_date = datetime(max_date.year, 1, 1)
+                end_date = datetime(max_date.year, 3, 31)
+
+            elif selected_range == "Q2":
+                start_date = datetime(max_date.year, 4, 1)
+                end_date = datetime(max_date.year, 6, 30)
+
+            elif selected_range == "Q3":
+                start_date = datetime(max_date.year, 7, 1)
+                end_date = datetime(max_date.year, 9, 30)
+
+            elif selected_range == "Q4":
+                start_date = datetime(max_date.year, 10, 1)
+                end_date = datetime(max_date.year, 12, 31)
+
+            elif selected_range == "Custom Range":
+                start_date = st.date_input("📅 Start Date", value=min_date, min_value=min_date, max_value=max_date)
+                end_date = st.date_input("📅 End Date", value=max_date, min_value=min_date, max_value=max_date)
+
+            else:
+                start_date, end_date = min_date, max_date
+
+        with col2:
+            countries = ["All"] + sorted(df_sales_order_merged["country"].dropna().unique().tolist())
+            selected_country = st.selectbox("🌍Country", countries)
+
+        with col3:  
+            source = st.multiselect("DataSource", ["OneUp", "SumUp"])
+        
+        with col4:
+            selected_status = st.multiselect(
+            "SelectInvoice Status:",
+            options=["Paid", "Unpaid"])
+        with col5:
+            selected_product_family = st.multiselect(
+            "ProductFamily", 
+            options=[
+    "Filets", "Inktvissen en Celaphoden", "Hele vis", "Snacks",
+    "Overig", "PD Garnalen", "HOSO", "Mollusken", "Zeevruchten", "Groente",
+    "Steaks", "PUD Cocktail", "Party Garnalen", "Surimi", "HLSO"
+])
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # ========== APPLY FILTERS ==========
+        filtered_df = apply_date_filter(df_sales_order_merged, start_date, end_date)
+        filtered_df = apply_country_filter(filtered_df, selected_country)
+        filtered_df = apply_source_filter(filtered_df, source)
+        filtered_df = apply_invoice_status_filter(filtered_df, selected_status)
+        filtered_df = apply_product_family_filter(filtered_df, selected_product_family)
+        filtered_df = apply_customer_filter(filtered_df, selected_customers)
+        filtered_df = apply_product_filter(filtered_df, selected_products)
+
+
+
+        
+        # ========== CUSTOMER ANALYSIS ==========
+        st.header("👥 Customer Analytics")
+
+        # Calculate customer metrics using cached function
+        metrics = calculate_customer_metrics(filtered_df)
+
+        # Top customers
+        if not metrics.empty:
+            # top_revenue = metrics.nlargest(10, "total_revenue")
+            #Define Top 10 Using Group By and desc on Customer
+            
+
+
+            top_revenue = metrics.groupby('customer_name').agg({
+                        'total_revenue': 'sum',
+                        'num_transactions': 'sum',
+                        'AOV': 'mean'
+                    }).reset_index()
+
+
+
+
+
+
+            top_transactions = metrics.groupby('customer_name').agg({
+                        'total_revenue': 'sum',
+                        'num_transactions': 'sum',
+                        'AOV': 'mean'
+                    }).reset_index()
+            
+
+
+            # KPI Cards
+            col1, col2, col3, col4 = st.columns([0.6, 1, 0.5, 1])
+
+            with col1:
+                st.metric("💰 Total Revenue", f"€{metrics['total_revenue'].sum():,.0f}")
+
+            with col2:
+                name = top_revenue.iloc[0]['customer_name']
+                total_rev = top_revenue.iloc[0]['total_revenue']
+                st.metric("🏆 Top Customer", name, f"€{total_rev:,.0f}")
+            with col3:
+                st.metric("📦 Average Order Value", f"€{metrics['AOV'].mean():,.0f}")
+            with col4:
+                most_active = top_transactions.iloc[0]
+                name = most_active["customer_name"]
+                st.metric("🔄 Most Active Customer", name, f"{int(most_active['num_transactions'])} orders")
+            st.markdown("---")
+
+            # Charts
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.subheader("💰 Customers by Revenue")
+                ROW_HEIGHT = 28
+
+                chart_height = max(400, len(top_revenue) * ROW_HEIGHT)
+
+                chart_revenue = (
+                    alt.Chart(top_revenue)
+                    .mark_bar(
+                        cornerRadiusTopRight=4,
+                        cornerRadiusBottomRight=4
+                    )
+                    .encode(
+                        x=alt.X(
+                            "total_revenue:Q",
+                            title="Revenue (€)",
+                            axis=alt.Axis(format=".0f")
+                        ),
+                        y=alt.Y(
+                            "customer_name:N",
+                            sort="-x",
+                            title=None
+                        ),
+                        color=alt.value("#10b981"),
+                        tooltip=[
+                            alt.Tooltip("customer_name:N", title="Customer"),
+                            alt.Tooltip("total_revenue:Q", title="Revenue", format=".2f"),
+                            alt.Tooltip("num_transactions:Q", title="Orders"),
+                            alt.Tooltip("AOV:Q", title="AOV", format=".2f"),
+                        ],
+                    )
+                    .properties(height=chart_height)
+                    .configure(background="#f0f9ff")
+                )
+
+                with st.container(height=400):
+                    st.altair_chart(chart_revenue, use_container_width=True)
+                
+
+    
+
+            with col2:
+                st.subheader("🔁 Customers by Transaction Count")
+                ROW_HEIGHT = 28
+
+                chart_height = max(400, len(top_transactions) * ROW_HEIGHT)
+
+                chart_transactions = (
+                    alt.Chart(top_transactions)
+                    .mark_bar(
+                        cornerRadiusTopRight=4,
+                        cornerRadiusBottomRight=4
+                    )
+                    .encode(
+                        x=alt.X(
+                            "num_transactions:Q",
+                            title="Number of Transactions"
+                        ),
+                        y=alt.Y(
+                            "customer_name:N",
+                            sort="-x",
+                            title=None
+                        ),
+                        color=alt.value("#3b82f6"),
+                        tooltip=[
+                            alt.Tooltip("customer_name:N", title="Customer"),
+                            alt.Tooltip("num_transactions:Q", title="Transactions"),
+                            alt.Tooltip("total_revenue:Q", title="Revenue", format=".2f"),
+                            alt.Tooltip("AOV:Q", title="AOV", format=".2f"),
+                        ],
+                    )
+                    .properties(height=chart_height)
+                    .configure(background="#f0f9ff")
+                )
+
+                with st.container(height=400):
+                    st.altair_chart(chart_transactions, use_container_width=True)
+  
+        
+        # Apply filters to product data
+        filtered_sales = apply_date_filter(df_product_sales_merged, start_date, end_date)
+        filtered_sales = apply_country_filter(filtered_sales, selected_country)
+        filtered_sales = apply_source_filter(filtered_sales, source)
+        filtered_sales = apply_customer_filter(filtered_sales, selected_customers)
+        filtered_sales = apply_product_filter(filtered_sales, selected_products)
+
+        # Calculate product metrics using cached function
+        product_metrics = calculate_product_metrics(filtered_sales, df_product_clean)
+        product_metrics = apply_product_family_filter(product_metrics, selected_product_family)
+        product_metrics = product_metrics[product_metrics["margin_%"] > 0]
+        # Top products
+        if not product_metrics.empty:
+            top_customer = product_metrics[product_metrics["margin_%"] != 100].groupby(['customer_name']).agg({
+                        'quantity': 'sum',
+                        'revenue': 'sum',
+                        'total_gross_margin': 'sum', 
+                        'margin_%': 'mean', 
+                        'margin_contribution_%': 'mean'
+                    }).reset_index()
+  
+            st.subheader("Customers by Gross Margin")
+            ROW_HEIGHT = 28
+            chart_height = max(400, len(top_customer) * ROW_HEIGHT)
+
             chart_margin = (
                 alt.Chart(top_customer)
-                .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
+                .mark_bar(
+                    cornerRadiusTopRight=4,
+                    cornerRadiusBottomRight=4
+                )
                 .encode(
-                    x=alt.X("total_gross_margin:Q", title="Gross Margin (€)", axis=alt.Axis(format=".0f")),
-                    y=alt.Y("customer_name:N", sort="-x", title=None),
+                    x=alt.X(
+                        "total_gross_margin:Q",
+                        title="Gross Margin (€)",
+                        axis=alt.Axis(format=".0f")
+                    ),
+                    y=alt.Y(
+                        "customer_name:N",
+                        sort="-x",
+                        title=None
+                    ),
                     color=alt.value("#360bf5"),
                     tooltip=[
                         alt.Tooltip("customer_name:N", title="Product"),
-                        alt.Tooltip("total_gross_margin:Q", title="Total Gross Margin", format=".2f"),
+                        alt.Tooltip(
+                            "total_gross_margin:Q",
+                            title="Total Gross Margin",
+                            format=".2f"
+                        ),
                         alt.Tooltip("margin_%:Q", title="Margin %", format=".1f"),
-                        alt.Tooltip("revenue:Q", title="Revenue", format=".2f")
-                    ]
+                        alt.Tooltip("revenue:Q", title="Revenue", format=".2f"),
+                    ],
                 )
-                .properties(height=400)
-                .configure(background='#f0f9ff;')
+                .properties(height=chart_height)
+                .configure(background="#f0f9ff")
             )
-            st.altair_chart(chart_margin, use_container_width=True)
+
+            with st.container(height=400):
+                st.altair_chart(chart_margin, use_container_width=True)
+
+
+       
 
 
         st.markdown("""
@@ -830,12 +1042,12 @@ if authentication_status:
 
 
     # ========================================
-    # TAB 2: INVENTORY
+    # TAB 3: INVENTORY
     # ========================================
     if 'inventory_updated' not in st.session_state:
         st.session_state.inventory_updated = False
     
-    with tab2:
+    with tab3:
 
         # --- 🧾 Inventory display ---
         st.write("### Product Inventory")
@@ -893,10 +1105,10 @@ if authentication_status:
 
 
     # ========================================
-    # TAB 3: FORECAST
+    # TAB 4: FORECAST
     # ========================================
     # --- Page Layout ---
-    with tab3:
+    with tab4:
         
         st.session_state.active_tab = "🚀 Forecast"
         # ---- Product detail view ----
@@ -982,7 +1194,7 @@ if authentication_status:
     # ========================================
     # TAB 3: INVOICE MANAGER
     # ========================================
-    with tab4:
+    with tab5:
         st.header("🧾 Invoice Manager")
         st.markdown("**Select and download invoices in bulk**")
         st.markdown("---")
@@ -1039,12 +1251,23 @@ if authentication_status:
                 ["All", "Sent", "Not Sent"],
                 key="sent_status"
             )
+
+        with col6:
+            invoice_id = st.multiselect(
+                "Invoice ID", 
+                options=invoice_ids_list,
+                key="invoice_id"
+            )
         
         st.markdown('</div>', unsafe_allow_html=True)
         
         # ========== APPLY INVOICE FILTERS ==========
         filtered_invoices = apply_date_filter(df_invoices, inv_start_date, inv_end_date)
         filtered_invoices = apply_country_filter(filtered_invoices, inv_selected_country)
+        filtered_invoices = apply_invoice_filter(filtered_invoices, invoice_id)
+
+
+
         
         if payment_status == "Paid":
             filtered_invoices = filtered_invoices[filtered_invoices["paid"] > 0]
@@ -1132,6 +1355,7 @@ if authentication_status:
                 col.markdown(f"**{header}**")
             
             st.markdown("---")
+
             
             # Display each invoice with checkbox
             for idx, row in display_invoices.iterrows():
