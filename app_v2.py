@@ -578,7 +578,7 @@ if authentication_status:
                         'total_gross_margin': 'sum', 
                         'margin_%': 'mean', 
                         'margin_contribution_%': 'mean'
-                    }).nlargest(10, 'quantity').reset_index()
+                    }).reset_index()
       
    
             top_product_revenue = product_metrics.groupby(['product_name', 'item_family_name']).agg({
@@ -587,7 +587,7 @@ if authentication_status:
                         'total_gross_margin': 'sum', 
                         'margin_%': 'mean', 
                         'margin_contribution_%': 'mean'
-                    }).nlargest(10, 'revenue').reset_index()
+                    }).reset_index()
             # top_margin = product_metrics.nlargest(10, "total_gross_margin")
             top_margin = product_metrics[product_metrics["margin_%"] != 100].groupby(['product_name', 'item_family_name']).agg({
                         'quantity': 'sum',
@@ -595,7 +595,7 @@ if authentication_status:
                         'total_gross_margin': 'sum', 
                         'margin_%': 'mean', 
                         'margin_contribution_%': 'mean'
-                    }).nlargest(10, 'revenue').reset_index()
+                    }).reset_index()
             
 
             top_customer = product_metrics[product_metrics["margin_%"] != 100].groupby(['customer_name']).agg({
@@ -604,7 +604,7 @@ if authentication_status:
                         'total_gross_margin': 'sum', 
                         'margin_%': 'mean', 
                         'margin_contribution_%': 'mean'
-                    }).nlargest(10, 'revenue').reset_index()
+                    }).reset_index()
 
             product_family_margins = product_metrics[product_metrics["margin_%"] != 100].groupby(['item_family_name']).agg({
                         'quantity': 'sum',
@@ -643,90 +643,171 @@ if authentication_status:
             col1, col2 = st.columns(2)
 
             with col1:
-                st.subheader("📦 Top 10 Products by Units Sold")
+                st.subheader("📦 Products by Units Sold")
+                # Define row height (px per bar)
+                ROW_HEIGHT = 28
+
+                chart_height = max(400, len(top_units) * ROW_HEIGHT)
+
                 chart_units = (
                     alt.Chart(top_units)
-                    .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
+                    .mark_bar(
+                        cornerRadiusTopRight=4,
+                        cornerRadiusBottomRight=4
+                    )
                     .encode(
-                        x=alt.X("quantity:Q", title="Units Sold"),
-                        y=alt.Y("product_name:N", sort="-x", title=None),
+                        x=alt.X(
+                            "quantity:Q",
+                            title="Units Sold"
+                        ),
+                        y=alt.Y(
+                            "product_name:N",
+                            sort="-x",
+                            title=None
+                        ),
                         color=alt.value("#10b981"),
                         tooltip=[
                             alt.Tooltip("product_name:N", title="Product"),
                             alt.Tooltip("quantity:Q", title="Units Sold", format=","),
                             alt.Tooltip("revenue:Q", title="Revenue", format=".2f"),
                             # alt.Tooltip("margin_%:Q", title="Margin %", format=".1f")
-                        ]
+                        ],
                     )
-                    .properties(height=400)
-                    .configure(background='#f0f9ff;')
+                    .properties(height=chart_height)
+                    .configure(background="#f0f9ff")
                 )
-                st.altair_chart(chart_units, use_container_width=True)
+
+                with st.container(height=400):
+                    st.altair_chart(chart_units, use_container_width=True)
+
+
 
             with col2:
-                st.subheader("💰 Top 10 Products by Revenue")
+                st.subheader("💰 Products by Revenue")
+                # Define row height (px per bar)
+                ROW_HEIGHT = 28
+
+                chart_height = max(400, len(top_product_revenue) * ROW_HEIGHT)
+
                 chart_prod_revenue = (
                     alt.Chart(top_product_revenue)
-                    .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
+                    .mark_bar(
+                        cornerRadiusTopRight=4,
+                        cornerRadiusBottomRight=4
+                    )
                     .encode(
-                        x=alt.X("revenue:Q", title="Revenue (€)", axis=alt.Axis(format=".0f")),
-                        y=alt.Y("product_name:N", sort="-x", title=None),
+                        x=alt.X(
+                            "revenue:Q",
+                            title="Revenue (€)",
+                            axis=alt.Axis(format=".0f")
+                        ),
+                        y=alt.Y(
+                            "product_name:N",
+                            sort="-x",
+                            title=None
+                        ),
                         color=alt.value("#3b82f6"),
                         tooltip=[
                             alt.Tooltip("product_name:N", title="Product"),
                             alt.Tooltip("revenue:Q", title="Revenue", format=".2f"),
                             alt.Tooltip("quantity:Q", title="Units Sold", format=","),
-                            # alt.Tooltip("margin_%:Q", title="Margin %", format=".1f")
-                        ]
+                        ],
                     )
-                    .properties(height=400)
-                    .configure(background='#f0f9ff;')
+                    .properties(height=chart_height)
+                    .configure(background="#f0f9ff")
                 )
-                st.altair_chart(chart_prod_revenue, use_container_width=True)
+
+                with st.container(height=400):
+                    st.altair_chart(chart_prod_revenue, use_container_width=True)
+
 
             col1, col2 = st.columns(2)
 
             with col1:
-                st.subheader("🏅 Top 10 Products by Gross Margin")
+                st.subheader("🏅 Products by Gross Margin")
+                ROW_HEIGHT = 28
+
+                chart_height = max(400, len(top_margin) * ROW_HEIGHT)
+
                 chart_margin = (
                     alt.Chart(top_margin)
-                    .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
+                    .mark_bar(
+                        cornerRadiusTopRight=4,
+                        cornerRadiusBottomRight=4
+                    )
                     .encode(
-                        x=alt.X("total_gross_margin:Q", title="Gross Margin (€)", axis=alt.Axis(format=".0f")),
-                        y=alt.Y("product_name:N", sort="-x", title=None),
+                        x=alt.X(
+                            "total_gross_margin:Q",
+                            title="Gross Margin (€)",
+                            axis=alt.Axis(format=".0f")
+                        ),
+                        y=alt.Y(
+                            "product_name:N",
+                            sort="-x",
+                            title=None
+                        ),
                         color=alt.value("#f59e0b"),
                         tooltip=[
                             alt.Tooltip("product_name:N", title="Product"),
-                            alt.Tooltip("total_gross_margin:Q", title="Total Gross Margin", format=".2f"),
+                            alt.Tooltip(
+                                "total_gross_margin:Q",
+                                title="Total Gross Margin",
+                                format=".2f"
+                            ),
                             alt.Tooltip("margin_%:Q", title="Margin %", format=".1f"),
-                            alt.Tooltip("revenue:Q", title="Revenue", format=".2f")
-                        ]
+                            alt.Tooltip("revenue:Q", title="Revenue", format=".2f"),
+                        ],
                     )
-                    .properties(height=400)
-                    .configure(background='#f0f9ff;')
+                    .properties(height=chart_height)
+                    .configure(background="#f0f9ff")
                 )
-                st.altair_chart(chart_margin, use_container_width=True)
+
+                with st.container(height=400):
+                    st.altair_chart(chart_margin, use_container_width=True)
 
             with col2:
                 st.subheader("📦 Gross Margin by Product Family")
+                # Define row height (px per bar)
+                ROW_HEIGHT = 28
+
+                chart_height = max(400, len(product_family_margins) * ROW_HEIGHT)
+
                 chart_margin = (
                     alt.Chart(product_family_margins)
-                    .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
+                    .mark_bar(
+                        cornerRadiusTopRight=4,
+                        cornerRadiusBottomRight=4
+                    )
                     .encode(
-                        x=alt.X("total_gross_margin:Q", title="Gross Margin (€)", axis=alt.Axis(format=".0f")),
-                        y=alt.Y("item_family_name:N", sort="-x", title=None),
+                        x=alt.X(
+                            "total_gross_margin:Q",
+                            title="Gross Margin (€)",
+                            axis=alt.Axis(format=".0f")
+                        ),
+                        y=alt.Y(
+                            "item_family_name:N",
+                            sort="-x",
+                            title=None
+                        ),
                         color=alt.value("#f59e0b"),
                         tooltip=[
                             alt.Tooltip("item_family_name:N", title="Product"),
-                            alt.Tooltip("total_gross_margin:Q", title="Total Gross Margin", format=".2f"),
+                            alt.Tooltip(
+                                "total_gross_margin:Q",
+                                title="Total Gross Margin",
+                                format=".2f"
+                            ),
                             alt.Tooltip("margin_%:Q", title="Margin %", format=".1f"),
-                            alt.Tooltip("revenue:Q", title="Revenue", format=".2f")
-                        ]
+                            alt.Tooltip("revenue:Q", title="Revenue", format=".2f"),
+                        ],
                     )
-                    .properties(height=400)
-                    .configure(background='#f0f9ff;')
+                    .properties(height=chart_height)
+                    .configure(background="#f0f9ff")
                 )
-                st.altair_chart(chart_margin, use_container_width=True)
+
+                with st.container(height=400):
+                    st.altair_chart(chart_margin, use_container_width=True)
+
 
 
 
