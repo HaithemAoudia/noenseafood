@@ -37,3 +37,23 @@ def apply_product_family_filter(df, family):
             return df
         else:
             return df[df["item_family_name"].isin(family)]
+        
+
+def apply_customer_filter(df, customers):
+    if len(customers) == 0:
+        return df
+    else:
+        return df[df["customer_name"].isin(customers)]
+    
+
+def apply_product_filter(df, products):
+    if len(products) == 0:
+        return df
+    else:
+        return df[df["product_name"].isin(products)]
+    
+def apply_invoice_filter(df, invoice_ids):
+    if len(invoice_ids) == 0:
+        return df
+    else:
+        return df[df["invoice_id"].isin(invoice_ids)]
