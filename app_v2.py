@@ -681,6 +681,7 @@ if authentication_status:
                     st.altair_chart(chart_units, use_container_width=True)
 
 
+
             with col2:
                 st.subheader("💰 Products by Revenue")
                 # Define row height (px per bar)
