@@ -319,7 +319,7 @@ if authentication_status:
         return df_sales, df_product, df_customers, df_transactions_sumup, df_product_inventory_analysis, df_product_inventory
 
     
-    # @st.cache_data(ttl=300, show_spinner=False)
+    @st.cache_data(ttl=300, show_spinner=False)
     def prepare_data(_df_sales, _df_product, _df_transactions_sumup):
         """Prepare and transform data once - cached for performance"""
         df_sales = _df_sales.copy()
@@ -1787,6 +1787,7 @@ if authentication_status:
                 st.warning("⚠️ Please select at least one invoice to download")
         else:
             st.info("No invoices found matching the selected filters")
+
 
 
 
