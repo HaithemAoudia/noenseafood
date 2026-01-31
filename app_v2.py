@@ -13,11 +13,20 @@ import plotly.graph_objects as go
 import streamlit_authenticator as stauth
 import pickle
 from pathlib import Path
+import zipfile
 from filters import apply_date_filter, apply_country_filter, apply_source_filter, apply_invoice_status_filter, apply_product_family_filter, apply_customer_filter, apply_product_filter, apply_invoice_filter
 from helpers import print_invoice, trigger_manual_refresh, send_email_invoice
 from analytics import calculate_customer_metrics, calculate_product_metrics
 import os
 from dotenv import load_dotenv
+import streamlit as st
+import psutil
+
+
+process = psutil.Process(os.getpid())
+# st.write(f"RAM Usage: {process.memory_info().rss / 1024 / 1024:.2f} MB")
+# print(f"RAM Usage: {process.memory_info().rss / 1024 / 1024:.2f} MB")
+
 
 
 load_dotenv('noenseafood.env')
@@ -319,7 +328,7 @@ if authentication_status:
         return df_sales, df_product, df_customers, df_transactions_sumup, df_product_inventory_analysis, df_product_inventory
 
     
-    # @st.cache_data(ttl=300, show_spinner=False)
+    @st.cache_data(ttl=300, show_spinner=False)
     def prepare_data(_df_sales, _df_product, _df_transactions_sumup):
         """Prepare and transform data once - cached for performance"""
         df_sales = _df_sales.copy()
@@ -329,6 +338,7 @@ if authentication_status:
         # Convert data types
         df_sales["date"] = pd.to_datetime(df_sales["date"], errors="coerce")
         df_sales["paid"] = pd.to_numeric(df_sales["paid"] - df_sales["tax_amount"], errors="coerce")
+        df_sales["paid"] = df_sales["paid"].apply(lambda x: max(x, 0))
         df_sales["subtotal"] = pd.to_numeric(df_sales["subtotal"], errors="coerce")
         df_sales["quantity"] = pd.to_numeric(df_sales["quantity"], errors="coerce")
         df_sales["unit_price"] = pd.to_numeric(df_sales["unit_price"], errors="coerce")
@@ -357,7 +367,7 @@ if authentication_status:
 
         # Create invoices metadata dataframe
         df_invoices = df_sales[
-            ["invoice_id", "customer_name", "country", "city", "date", "due_date", "updated_at", "amount", "sent", "paid", "source"]
+            ["invoice_id", "invoice_number", "customer_name", "country", "city", "date", "due_date", "updated_at", "amount", "sent", "paid", "source"]
         ].sort_values("updated_at", ascending=False).drop_duplicates("invoice_id")
 
         # SumUp sales
@@ -381,7 +391,7 @@ if authentication_status:
         
         # Prepare product sales data
         df_product_sales_oneup = df_sales[
-            ["invoice_id", "customer_name", "item_id", "country", "date", "unit_price", "total_order_line", "quantity", "source"]
+            ["invoice_id", "paid", "customer_name", "item_id", "country", "date", "unit_price", "total_order_line", "quantity", "source"]
         ]
 
         # Merge One up Sales with One up Products to get product name based on id
@@ -397,6 +407,7 @@ if authentication_status:
         })
         
         df_product_sales_sumup["item_id"] = 0
+        df_product_sales_sumup["paid"] = None
         df_product_sales_sumup = df_product_sales_sumup[
             ["id", "customer_name", "item_id", "product_name", "country", "date", "unit_price", "total_order_line", "quantity", "source"]
         ]
@@ -416,13 +427,17 @@ if authentication_status:
         df_sales, df_product, df_transactions_sumup
     )
 
+
+    # st.dataframe(df_product_sales_merged)
+
+    # st.dataframe(df_sales_order_merged)
    
 
     customer_list = df_customers['full_name'].dropna().unique().tolist()
 
     product_list = df_sales_order_merged['product_name'].dropna().unique().tolist()
 
-    invoice_ids_list = df_invoices['invoice_id'].dropna().unique().tolist()
+    invoice_numbers_list = df_invoices['invoice_number'].dropna().unique().tolist()
 
   
 
@@ -474,13 +489,15 @@ if authentication_status:
     if manual_refresh:
         trigger_manual_refresh()
 
+    st.subheader(f"Welcome!")
+    tab2, tab3, tab4, tab5, tab6 = st.tabs(["📈 Product Analytics", "👥 Customer Analytics", "📦 Inventory", "🚀 Forecast", "🧾 Invoice Manager"])
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Product Analytics", "👥 Customer Analytics", "📦 Inventory", "🚀 Forecast", "🧾 Invoice Manager"])
+
 
     # ========================================
     # TAB 1: ANALYTICS DASHBOARD
     # ========================================
-    with tab1:
+    with tab2:
         # ========== FILTERS ==========
         # st.markdown('<div class="filter-container">', unsafe_allow_html=True)
         st.subheader("🔍 Filters")
@@ -563,7 +580,7 @@ if authentication_status:
         filtered_sales = apply_source_filter(filtered_sales, source)
         filtered_sales = apply_customer_filter(filtered_sales, selected_customers)
         filtered_sales = apply_product_filter(filtered_sales, selected_products)
-        
+        filtered_sales = apply_invoice_status_filter(filtered_sales, selected_status)
 
         # Calculate product metrics using cached function
         product_metrics = calculate_product_metrics(filtered_sales, df_product_clean)
@@ -614,24 +631,25 @@ if authentication_status:
                         'margin_contribution_%': 'mean'
                     }).reset_index()
             
-            
-            # product_metrics[product_metrics["margin_%"] != 100].nlargest(10, "total_gross_margin", )
-   
+        
             # Product KPIs
-            col1, col2, col3, col4 = st.columns([0.3, 1, 0.3, 0.3])
+            col1, col2, col3, col4, col5 = st.columns([0.3, 0.3, 0.8, 0.3, 0.3])
 
             with col1:
                 st.metric("📊 Total Units Sold", f"{int(product_metrics['quantity'].sum()):,}")
 
             with col2:
-                best_seller = top_units.iloc[0]
+                st.metric("💰 Total Revenue", f"€{product_metrics['revenue'].sum():,.0f}")
+
+            with col3:
+                best_seller = top_units.nlargest(1, "quantity").iloc[0]
                 name = best_seller["product_name"]
                 st.metric("🏅 Best Seller", name, f"{int(best_seller['quantity']):,} units")
 
-            with col3:
-                st.metric("💵 Total Gross Margin", f"€{product_metrics[product_metrics["margin_%"] != 100]['total_gross_margin'].sum():,.0f}")
-
             with col4:
+                st.metric("💵 Total Gross Margin", f"€{product_metrics[product_metrics['margin_%'] != 100]['total_gross_margin'].sum():,.0f}")
+
+            with col5:
                 avg_margin = product_metrics[product_metrics["margin_%"] != 100]["margin_%"].mean()
                 st.metric("📈 Avg Margin %", f"{avg_margin:.1f}%")
 
@@ -766,7 +784,7 @@ if authentication_status:
                     st.altair_chart(chart_margin, use_container_width=True)
 
             with col2:
-                st.subheader("📦 Gross Margin by Product Family")
+                st.subheader("📦 Product Family by Gross Margin")
                 # Define row height (px per bar)
                 ROW_HEIGHT = 28
 
@@ -809,22 +827,65 @@ if authentication_status:
                     st.altair_chart(chart_margin, use_container_width=True)
 
 
+            st.subheader("📦 Product Family by Revenue")
+            # Define row height (px per bar)
+            ROW_HEIGHT = 28
+
+            chart_height = max(400, len(product_family_margins) * ROW_HEIGHT)
+
+            chart_margin = (
+                alt.Chart(product_family_margins)
+                .mark_bar(
+                    cornerRadiusTopRight=4,
+                    cornerRadiusBottomRight=4
+                )
+                .encode(
+                    x=alt.X(
+                        "revenue:Q",
+                        title="Revenue (€)",
+                        axis=alt.Axis(format=".0f")
+                    ),
+                    y=alt.Y(
+                        "item_family_name:N",
+                        sort="-x",
+                        title=None
+                    ),
+                    color=alt.value("#f59e0b"),
+                    tooltip=[
+                        alt.Tooltip("item_family_name:N", title="Product"),
+                        alt.Tooltip(
+                            "revenue:Q",
+                            title="Total Revenue",
+                            format=".2f"
+                        ),
+                        alt.Tooltip("margin_%:Q", title="Margin %", format=".1f"),
+                        alt.Tooltip("total_gross_margin:Q", title="Gross Margin", format=".2f"),
+                    ],
+                )
+                .properties(height=chart_height)
+                .configure(background="#f0f9ff")
+            )
+
+            with st.container(height=400):
+                st.altair_chart(chart_margin, use_container_width=True)
 
 
-        st.markdown("""
-    #### **Product Sales Calculations**
-    - **Units Sold by Product** = Sum of product sales order line quantity
-    - **Revenue Generated per Products** = Sum of Total Order Line                
 
 
-    #### **Gross Margin Calculations**
-    - **Total Cost** = Purchase Price × Quantity  
-    - **Total Gross Margin** = Total Order Line (Product Revenue *excl. VAT*) − Total Cost  
-    """)
+    #     st.markdown("""
+    # #### **Product Sales Calculations**
+    # - **Units Sold by Product** = Sum of product sales order line quantity
+    # - **Revenue Generated per Products** = Sum of Total Order Line                
+
+
+    # #### **Gross Margin Calculations**
+    # - **Total Cost** = Purchase Price × Quantity  
+    # - **Total Gross Margin** = Total Order Line (Product Revenue *excl. VAT*) − Total Cost  
+    # """)
         
 
 
-    with tab2:
+    with tab3:
         st.session_state.active_tab = "📈 Customer Analytics"
         st.header("👥 Customer Analytics Dashboard")
           # ========== FILTERS ==========
@@ -1109,16 +1170,16 @@ if authentication_status:
        
 
 
-        st.markdown("""
-    #### **Product Sales Calculations**
-    - **Units Sold by Product** = Sum of product sales order line quantity
-    - **Revenue Generated per Products** = Sum of Total Order Line                
+    #     st.markdown("""
+    # #### **Product Sales Calculations**
+    # - **Units Sold by Product** = Sum of product sales order line quantity
+    # - **Revenue Generated per Products** = Sum of Total Order Line                
 
 
-    #### **Gross Margin Calculations**
-    - **Total Cost** = Purchase Price × Quantity  
-    - **Total Gross Margin** = Total Order Line (Product Revenue *excl. VAT*) − Total Cost  
-    """)
+    # #### **Gross Margin Calculations**
+    # - **Total Cost** = Purchase Price × Quantity  
+    # - **Total Gross Margin** = Total Order Line (Product Revenue *excl. VAT*) − Total Cost  
+    # """)
 
 
 
@@ -1128,7 +1189,7 @@ if authentication_status:
     if 'inventory_updated' not in st.session_state:
         st.session_state.inventory_updated = False
     
-    with tab3:
+    with tab4:
 
         # --- 🧾 Inventory display ---
         st.write("### Product Inventory")
@@ -1189,7 +1250,7 @@ if authentication_status:
     # TAB 4: FORECAST
     # ========================================
     # --- Page Layout ---
-    with tab4:
+    with tab5:
         
         st.session_state.active_tab = "🚀 Forecast"
         # ---- Product detail view ----
@@ -1275,7 +1336,7 @@ if authentication_status:
     # ========================================
     # TAB 3: INVOICE MANAGER
     # ========================================
-    with tab5:
+    with tab6:
         st.header("🧾 Invoice Manager")
         st.markdown("**Select and download invoices in bulk**")
         st.markdown("---")
@@ -1335,9 +1396,9 @@ if authentication_status:
 
         with col6:
             invoice_id = st.multiselect(
-                "Invoice ID", 
-                options=invoice_ids_list,
-                key="invoice_id"
+                "Invoice Number", 
+                options=invoice_numbers_list,
+                key="invoice_number"
             )
         
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1346,6 +1407,8 @@ if authentication_status:
         filtered_invoices = apply_date_filter(df_invoices, inv_start_date, inv_end_date)
         filtered_invoices = apply_country_filter(filtered_invoices, inv_selected_country)
         filtered_invoices = apply_invoice_filter(filtered_invoices, invoice_id)
+
+        # st.dataframe(filtered_invoices)
 
 
 
@@ -1429,8 +1492,8 @@ if authentication_status:
                 display_invoices = filtered_invoices
             
             # Create columns for the header
-            header_cols = st.columns([0.5, 2, 2, 1.5, 1.5, 1, 1, 1, 1.5])
-            headers = ["Select", "Invoice ID", "Customer", "Country", "City", "Date", "Amount", "Sent", "Status"]
+            header_cols = st.columns([1, 1.5, 1.5, 2, 1.5, 1.5, 1, 1, 0.8, 1.5])
+            headers = ["Select", "Invoice ID", "Invoice Number", "Customer", "Country", "City", "Date", "Amount", "Sent", "Status"]
             
             for col, header in zip(header_cols, headers):
                 col.markdown(f"**{header}**")
@@ -1440,7 +1503,7 @@ if authentication_status:
             
             # Display each invoice with checkbox
             for idx, row in display_invoices.iterrows():
-                cols = st.columns([0.5, 2, 2, 1.5, 1.5, 1, 1, 1, 1.5])
+                cols = st.columns([1, 1.5, 1.5, 2, 1.5, 1.5, 1, 1, 0.8, 1.5])
                 
                 with cols[0]:
                     is_selected = row["invoice_id"] in st.session_state.selected_invoices
@@ -1464,33 +1527,38 @@ if authentication_status:
                 with cols[1]:
                     st.text(row["invoice_id"])
                 
+                
                 with cols[2]:
+                    st.text(row["invoice_number"])
+                
+                with cols[3]:
                     customer_name = row["customer_name"]
                     st.text(customer_name[:25] + "..." if len(customer_name) > 25 else customer_name)
                 
-                with cols[3]:
+                with cols[4]:
                     st.text(row["country"])
                 
-                with cols[4]:
+                with cols[5]:
                     st.text(row["city"])
                 
-                with cols[5]:
+                with cols[6]:
                     st.text(row["date"].strftime("%Y-%m-%d"))
                 
-                with cols[6]:
+                with cols[7]:
                     st.text(f"€{row['amount']:,.2f}")
                 
-                with cols[7]:
+                with cols[8]:
                     st.text("✅" if row["sent"] else "❌")
                 
-                with cols[8]:
+                with cols[9]:
                     status = "✅ Paid" if row["paid"] > 0 else "⏳ Unpaid"
                     st.text(status)
             
             st.markdown("---")
             
         st.subheader(f"📥 Download Selected Invoices ({len(st.session_state.selected_invoices)} selected)")
-        st.session_state.selected_invoices
+        # st.session_state.pdf_data = None  # Reset PDF data
+        download_option = st.selectbox("Download Options", ["Download Merged PDF for Bulk Printing", "Download Individual PDFs"], key="download_options")
         if len(st.session_state.selected_invoices) > 0:
             col1, col2 = st.columns([3, 1])
             
@@ -1499,59 +1567,120 @@ if authentication_status:
             
             with col2:
                 if st.button("🚀 Download PDFs", type="primary", use_container_width=True):
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
+                    if download_option == "Download Merged PDF for Bulk Printing":
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
 
-                    total_invoices = len(st.session_state.selected_invoices)
-                    
-                    # Fetch PDF URLs
-                    status_text.text("🔄 Fetching invoice URLs...")
-                    pdf_urls = []
-                    for i, invoice_id in enumerate(st.session_state.selected_invoices):
-                        pdf_urls.append(print_invoice(invoice_id, 'json'))
-                        progress_bar.progress((i + 1) / total_invoices)
-                    
-                    # Merge PDFs
-                    merger = PdfMerger()
-                    status_text.text("🔄 Merging PDFs...")
+                        total_invoices = len(st.session_state.selected_invoices)
+                        
+                        # Fetch PDF URLs
+                        status_text.text("🔄 Fetching invoice URLs...")
+                        pdf_urls = []
+                        for i, invoice_id in enumerate(st.session_state.selected_invoices):
+                            pdf_urls.append(print_invoice(invoice_id, 'json'))
+                            progress_bar.progress((i + 1) / total_invoices)
+                        
+                        # Merge PDFs
+                        merger = PdfMerger()
+                        status_text.text("🔄 Merging PDFs...")
 
-                    for i, url in enumerate(pdf_urls, start=1):
-                        try:
-                            response = requests.get(url)
-                            response.raise_for_status()
-                            merger.append(BytesIO(response.content))
-                        except Exception as e:
-                            st.error(f"❌ Failed to load PDF {url}: {e}")
+                        for i, url in enumerate(pdf_urls, start=1):
+                            try:
+                                response = requests.get(url)
+                                response.raise_for_status()
+                                merger.append(BytesIO(response.content))
+                            except Exception as e:
+                                st.error(f"❌ Failed to load PDF {url}: {e}")
 
-                    # Write merged PDF to in-memory buffer
-                    merged_pdf = BytesIO()
-                    merger.write(merged_pdf)
-                    merger.close()
-                    merged_pdf.seek(0)
+                        # Write merged PDF to in-memory buffer
+                        merged_pdf = BytesIO()
+                        merger.write(merged_pdf)
+                        merger.close()
+                        merged_pdf.seek(0)
 
-                    # Store in session state for email button
-                    st.session_state.merged_pdf_data = merged_pdf.read()
-                    merged_pdf.seek(0)
+                        # Store in session state for email button
+                        st.session_state.pdf_data = merged_pdf.read()
+                        merged_pdf.seek(0)
 
-                    # Encode for new tab view
-                    b64_pdf = base64.b64encode(st.session_state.merged_pdf_data).decode("utf-8")
+                        # Encode for new tab view
+                        b64_pdf = base64.b64encode(st.session_state.pdf_data).decode("utf-8")
 
-                    status_text.text("✅ PDFs merged successfully!")
-                    progress_bar.progress(1.0)
+                        status_text.text("✅ PDFs merged successfully!")
+                        progress_bar.progress(1.0)
 
-                    # Display link to open in new tab
-                    pdf_display_link = f'<a href="data:application/pdf;base64,{b64_pdf}" target="_blank">📂 Open Merged PDF in New Tab</a>'
-                    st.markdown(pdf_display_link, unsafe_allow_html=True)
+                        # Display link to open in new tab
+                        pdf_display_link = f'<a href="data:application/pdf;base64,{b64_pdf}" target="_blank">📂 Open Merged PDF in New Tab</a>'
+                        st.markdown(pdf_display_link, unsafe_allow_html=True)
+
+                    elif download_option == "Download Individual PDFs":
+                        # Initialize session state for zip file if not present
+                        if 'invoices_zip' not in st.session_state:
+                            st.session_state.invoices_zip = None
+                        
+                        # Check if we need to fetch and create ZIP (only if not already cached)
+                        if st.session_state.invoices_zip is None:
+                            st.success("✅ Preparing invoices for download...")
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+                            total_invoices = len(st.session_state.selected_invoices)
+                            
+                            # Create ZIP file in memory
+                            zip_buffer = BytesIO()
+                            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                                for i, invoice_id in enumerate(st.session_state.selected_invoices):
+                                    try:
+                                        status_text.text(f"📥 Downloading invoices...")
+                                        pdf_url = print_invoice(invoice_id, 'json')
+                                        response = requests.get(pdf_url)
+                                        response.raise_for_status()
+                                        pdf_data = response.content
+                                        
+                                        # Get invoice number from filtered_invoices
+                                        invoice_row = filtered_invoices[filtered_invoices["invoice_id"] == invoice_id]
+                                        invoice_number = invoice_row["invoice_number"].values[0] if not invoice_row.empty else invoice_id
+                                        
+                                        # Add PDF to ZIP with invoice number as filename
+                                        zip_file.writestr(f"Invoice_{invoice_number}.pdf", pdf_data)
+                                        progress_bar.progress((i + 1) / total_invoices)
+                                    except Exception as e:
+                                        st.error(f"❌ Failed to add invoice #{invoice_id} to ZIP: {e}")
+                            
+                            zip_buffer.seek(0)
+                            st.session_state.invoices_zip = zip_buffer.read()
+                            status_text.text("✅ All invoices packaged successfully!")
+                        
+                        # Display download button for ZIP file
+                        st.download_button(
+                            label=f"⬇️ Download All Invoices ({len(st.session_state.selected_invoices)}) as ZIP",
+                            data=st.session_state.invoices_zip,
+                            file_name=f"Invoices_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                            mime="application/zip",
+                            use_container_width=True,
+                            key="download_invoices_zip"
+                        )
+                        
+                        # Store first PDF for email button (use first invoice if available)
+                        if st.session_state.selected_invoices:
+                            try:
+                                first_invoice_id = list(st.session_state.selected_invoices)[0]
+                                pdf_url = print_invoice(first_invoice_id, 'json')
+                                response = requests.get(pdf_url)
+                                st.session_state.pdf_data = response.content
+                            except:
+                                pass
+
+                    else:
+                        st.error("❌ Please select a download option")
                     
             # Show download and email buttons if PDF exists
             
-        if 'merged_pdf_data' in st.session_state and st.session_state.merged_pdf_data:
+        if 'pdf_data' in st.session_state and st.session_state.pdf_data:
             col1, col2 = st.columns(2)
             
             with col1:
                 st.download_button(
                     label="⬇️ Download Merged PDF",
-                    data=st.session_state.merged_pdf_data,
+                    data=st.session_state.pdf_data,
                     file_name="merged_invoices.pdf",
                     mime="application/pdf",
                     use_container_width=True
@@ -1612,7 +1741,7 @@ if authentication_status:
                         # --- Dynamic language selector per invoice ---
                         language_key = f"language_{customer_name}_{invoice_id}"
                         language_selected = st.selectbox(
-                            "Select Language",
+                            f"Select Language for invoice {invoice_id}",
                             ["Dutch", "French"],
                         )
 
@@ -1730,7 +1859,6 @@ if authentication_status:
                             else:
                                 success_count = 0
                                 failure_count = 0
-
                                 # Loop over each invoice customization and send it
                                 for invoice_id, details in st.session_state.email_customizations.items():
                                     try:
@@ -1785,8 +1913,12 @@ if authentication_status:
 
             else:
                 st.warning("⚠️ Please select at least one invoice to download")
-        else:
-            st.info("No invoices found matching the selected filters")
+        # else:
+        #     st.info("No invoices found matching the selected filters")
+
+        if "initial_rerun_done" not in st.session_state:
+            st.session_state.initial_rerun_done = True
+            st.rerun()
 
 
 

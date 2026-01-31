@@ -56,4 +56,4 @@ def apply_invoice_filter(df, invoice_ids):
     if len(invoice_ids) == 0:
         return df
     else:
-        return df[df["invoice_id"].isin(invoice_ids)]
+        return df[df["invoice_number"].isin(invoice_ids)]

@@ -23,18 +23,14 @@ def calculate_customer_metrics(df):
 def calculate_product_metrics(df, df_product):
     """Calculate product metrics"""
     if len(df) == 0:
-        return pd.DataFrame(columns=["product_name", "item_family_name", "quantity", "revenue", "gross_margin", "margin_%", "margin_contribution_%"])
+        return df
     
     df_merged = df.merge(
-        df_product[["id", "purchase_price", "item_family_name"]],
+        df_product[["id", "purchase_price", "item_family_name"]].drop_duplicates("id"),
         how="left",
         left_on="item_id",
         right_on="id"
     )
-
-
-
-    
     # df_merged = df_merged[df_merged["purchase_price"] > 0]
     df_merged = df_merged[df_merged["product_name"] != '']
     
