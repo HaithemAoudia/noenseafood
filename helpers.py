@@ -33,11 +33,11 @@ def print_invoice(invoice_id, format, df):
 
 
 def trigger_manual_refresh():
-    token = os.getenv('GITHUB_API')           
+    token = os.getenv('GITHUB_API')      
     owner = "haithemaoudia"
-    repo = "noen_data_pipeline"
-    workflow = "main.yml"                
-    branch = "main"                        
+    repo = "noenseafood"
+    workflow = "actions.yaml"                
+    branch = "master"                        
 
     url = f"https://api.github.com/repos/{owner}/{repo}/actions/workflows/{workflow}/dispatches"
 
@@ -58,6 +58,8 @@ def trigger_manual_refresh():
         print("Workflow dispatched successfully!")
     else:
         print("Failed to trigger workflow:", response.status_code, response.text)
+
+    return response.status_code
 
 def send_email_invoice(file_data, email_sender, email_password, email_reciever, subject, body, invoice_number):
     try:
