@@ -841,7 +841,7 @@ if authentication_status:
             
         
             # Product KPIs
-            col1, col2, col3, col4 = st.columns([0.3, 0.3, 0.8, 0.3])
+            col1, col2, col3, col4 = st.columns([0.3, 0.8, 0.3, 0.3])
 
             with col1:
                 st.metric("📊 Total Units Sold", f"{int(product_metrics['quantity'].sum()):,}")
