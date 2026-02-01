@@ -76,8 +76,11 @@ if authentication_status:
     )
 
         # ========== API CREDENTIALS ==========
-    API_EMAIL = os.getenv('API_EMAIL')
-    API_KEY = os.getenv('API_KEY')
+    API_EMAIL_NL = os.getenv('API_EMAIL_NL')
+    API_KEY_NL = os.getenv('API_KEY_NL')
+
+    API_EMAIL_EU = os.getenv('API_EMAIL_EU')
+    API_KEY_EU = os.getenv('API_KEY_EU')
 
     email_sender = os.getenv('EMAIL_SENDER')
     email_password = os.getenv('EMAIL_PASSWORD')
@@ -1762,7 +1765,7 @@ if authentication_status:
                         status_text.text("🔄 Fetching invoice URLs...")
                         pdf_urls = []
                         for i, invoice_id in enumerate(st.session_state.selected_invoices):
-                            pdf_urls.append(print_invoice(invoice_id, 'json'))
+                            pdf_urls.append(print_invoice(invoice_id, 'json', filtered_invoices))
                             progress_bar.progress((i + 1) / total_invoices)
                         
                         # Merge PDFs
@@ -1815,7 +1818,7 @@ if authentication_status:
                                 for i, invoice_id in enumerate(st.session_state.selected_invoices):
                                     try:
                                         status_text.text(f"📥 Downloading invoices...")
-                                        pdf_url = print_invoice(invoice_id, 'json')
+                                        pdf_url = print_invoice(invoice_id, 'json', filtered_invoices)
                                         response = requests.get(pdf_url)
                                         response.raise_for_status()
                                         pdf_data = response.content
@@ -1848,7 +1851,7 @@ if authentication_status:
                         if st.session_state.selected_invoices:
                             try:
                                 first_invoice_id = list(st.session_state.selected_invoices)[0]
-                                pdf_url = print_invoice(first_invoice_id, 'json')
+                                pdf_url = print_invoice(first_invoice_id, 'json', filtered_invoices)
                                 response = requests.get(pdf_url)
                                 st.session_state.pdf_data = response.content
                             except:
@@ -2049,7 +2052,7 @@ if authentication_status:
                                     try:
                                         # Generate PDF for this invoice
                                         st.write(f"Handling Invoice {invoice_id}")
-                                        pdf_url = print_invoice(invoice_id, 'json')
+                                        pdf_url = print_invoice(invoice_id, 'json', filtered_invoices)
                                         response = requests.get(pdf_url)
                                         response.raise_for_status()
 
@@ -2104,30 +2107,3 @@ if authentication_status:
         if "initial_rerun_done" not in st.session_state:
             st.session_state.initial_rerun_done = True
             st.rerun()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
