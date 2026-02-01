@@ -8,7 +8,7 @@ import time
 from dotenv import load_dotenv
 import os
 
-load_dotenv('noenseafood.env')
+
 
 google_cred = {
 'type': os.getenv('TYPE'),
