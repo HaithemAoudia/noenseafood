@@ -14,7 +14,7 @@ import streamlit_authenticator as stauth
 import pickle
 from pathlib import Path
 import zipfile
-from filters import apply_date_filter, apply_country_filter, apply_source_filter, apply_invoice_status_filter, apply_product_family_filter, apply_customer_filter, apply_product_filter, apply_invoice_filter
+from filters import apply_account_filter, apply_date_filter, apply_country_filter, apply_source_filter, apply_invoice_status_filter, apply_product_family_filter, apply_customer_filter, apply_product_filter, apply_invoice_filter
 from helpers import print_invoice, trigger_manual_refresh, send_email_invoice
 from analytics import calculate_customer_metrics, calculate_product_metrics
 import os
@@ -23,7 +23,7 @@ import streamlit as st
 import psutil
 
 
-process = psutil.Process(os.getpid())
+# process = psutil.Process(os.getpid())
 # st.write(f"RAM Usage: {process.memory_info().rss / 1024 / 1024:.2f} MB")
 # print(f"RAM Usage: {process.memory_info().rss / 1024 / 1024:.2f} MB")
 
@@ -31,7 +31,6 @@ process = psutil.Process(os.getpid())
 
 load_dotenv('noenseafood.env')
 
-print("Hello")
 
 names = ["Chems"]
 usernames = ["Noen Seafood"]
@@ -337,7 +336,10 @@ if authentication_status:
         
         # Convert data types
         df_sales["date"] = pd.to_datetime(df_sales["date"], errors="coerce")
-        df_sales["paid"] = pd.to_numeric(df_sales["paid"] - df_sales["tax_amount"], errors="coerce")
+        # Ensure both paid and tax_amount are numeric before subtraction
+        df_sales["paid"] = pd.to_numeric(df_sales["paid"], errors="coerce")
+        df_sales["tax_amount"] = pd.to_numeric(df_sales["tax_amount"], errors="coerce")
+        df_sales["paid"] = df_sales["paid"] - df_sales["tax_amount"]
         df_sales["paid"] = df_sales["paid"].apply(lambda x: max(x, 0))
         df_sales["subtotal"] = pd.to_numeric(df_sales["subtotal"], errors="coerce")
         df_sales["quantity"] = pd.to_numeric(df_sales["quantity"], errors="coerce")
@@ -351,7 +353,7 @@ if authentication_status:
         
         # Create sales order dataframe
         df_sales_order = df_sales[
-            ["invoice_id", "date", "paid", "total_order_line", "item_id", "customer_name", "country", "city", "source"]
+            ["invoice_id", "date", "paid", "total_order_line", "item_id", "customer_name", "country", "city", "source", "account"]
         ].drop_duplicates()
 
         # Add product name to sales orders
@@ -367,7 +369,7 @@ if authentication_status:
 
         # Create invoices metadata dataframe
         df_invoices = df_sales[
-            ["invoice_id", "invoice_number", "customer_name", "country", "city", "date", "due_date", "updated_at", "amount", "sent", "paid", "source"]
+            ["invoice_id", "invoice_number", "customer_name", "country", "city", "date", "due_date", "updated_at", "amount", "sent", "paid", "source", "account"]
         ].sort_values("updated_at", ascending=False).drop_duplicates("invoice_id")
 
         # SumUp sales
@@ -378,6 +380,9 @@ if authentication_status:
         df_sales_sumup.rename(columns={"total_price": "total_order_line"}, inplace=True)
 
         df_sales_sumup["item_id"] = None
+        df_sales_sumup["paid"] = 1  # Assume SumUp transactions are paid
+        df_sales_sumup["account"] = "SumUp"
+
         
         # Merge sales orders
         df_sales_order_merged = pd.concat([
@@ -391,7 +396,7 @@ if authentication_status:
         
         # Prepare product sales data
         df_product_sales_oneup = df_sales[
-            ["invoice_id", "paid", "customer_name", "item_id", "country", "date", "unit_price", "total_order_line", "quantity", "source"]
+            ["invoice_id", "paid", "customer_name", "item_id", "country", "date", "unit_price", "total_order_line", "quantity", "source", "account"]
         ]
 
         # Merge One up Sales with One up Products to get product name based on id
@@ -408,8 +413,9 @@ if authentication_status:
         
         df_product_sales_sumup["item_id"] = 0
         df_product_sales_sumup["paid"] = None
+        df_product_sales_sumup["account"] = None
         df_product_sales_sumup = df_product_sales_sumup[
-            ["id", "customer_name", "item_id", "product_name", "country", "date", "unit_price", "total_order_line", "quantity", "source"]
+            ["id", "customer_name", "item_id", "product_name", "country", "date", "unit_price", "total_order_line", "quantity", "source", "account"]
         ]
         
         df_product_sales_merged = pd.concat([
@@ -489,9 +495,208 @@ if authentication_status:
     if manual_refresh:
         trigger_manual_refresh()
 
-    st.subheader(f"Welcome!")
-    tab2, tab3, tab4, tab5, tab6 = st.tabs(["📈 Product Analytics", "👥 Customer Analytics", "📦 Inventory", "🚀 Forecast", "🧾 Invoice Manager"])
 
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🐟 Overview", "📈 Product Analytics", "👥 Customer Analytics", "🚀 Forecast", "🧾 Invoice Manager"])
+
+
+    with tab1:
+        col1, col2, col3, col4, col5, col6 = st.columns([2, 2, 2, 2, 2, 2])
+
+        min_date = df_sales_order_merged["date"].min()
+        max_date = df_sales_order_merged["date"].max()
+        today = datetime.today()
+
+
+        with col1:
+            date_options = ["YTD","Past Month", "Q1", "Q2", "Q3", "Q4", "Custom Range"]
+            selected_range = st.selectbox("📅Date Range ", date_options, index=0)
+
+            if selected_range == "YTD":
+                start_date = datetime(max_date.year, 1, 1)
+                end_date = max_date
+            
+            
+            elif selected_range == "Past Month":
+                start_date = max_date - pd.DateOffset(months=1)
+                end_date = max_date
+                
+
+            elif selected_range == "Q1":
+                start_date = datetime(max_date.year, 1, 1)
+                end_date = datetime(max_date.year, 3, 31)
+
+            elif selected_range == "Q2":
+                start_date = datetime(max_date.year, 4, 1)
+                end_date = datetime(max_date.year, 6, 30)
+
+            elif selected_range == "Q3":
+                start_date = datetime(max_date.year, 7, 1)
+                end_date = datetime(max_date.year, 9, 30)
+
+            elif selected_range == "Q4":
+                start_date = datetime(max_date.year, 10, 1)
+                end_date = datetime(max_date.year, 12, 31)
+
+            elif selected_range == "Custom Range":
+                start_date = st.date_input("📅 Start Date", value=min_date, min_value=min_date, max_value=max_date)
+                end_date = st.date_input("📅 End Date", value=max_date, min_value=min_date, max_value=max_date)
+
+            else:
+                start_date, end_date = min_date, max_date
+
+        with col2:
+            countries = ["All"] + sorted(df_sales_order_merged["country"].dropna().unique().tolist())
+            selected_country = st.selectbox(" 🌍Country", countries)
+
+        with col3:  
+            source = st.multiselect(" Data Source ", ["OneUp", "SumUp"])
+        
+        with col4:
+            selected_status = st.multiselect(
+            " Select Invoice Status: ",
+            options=["Paid", "Unpaid"])
+        with col5:
+            selected_product_family = st.multiselect(
+            " Product Family ", 
+            options=[
+    "Filets", "Inktvissen en Celaphoden", "Hele vis", "Snacks",
+    "Overig", "PD Garnalen", "HOSO", "Mollusken", "Zeevruchten", "Groente",
+    "Steaks", "PUD Cocktail", "Party Garnalen", "Surimi", "HLSO"
+])
+        with col6:
+            account_selected = st.multiselect(" Select Account ", ["NL", "EU"])
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # ========== APPLY FILTERS ==========
+        filtered_df = apply_date_filter(df_sales_order_merged, start_date, end_date)
+        filtered_df = apply_country_filter(filtered_df, selected_country)
+        filtered_df = apply_source_filter(filtered_df, source)
+        filtered_df = apply_invoice_status_filter(filtered_df, selected_status)
+        filtered_df = apply_product_family_filter(filtered_df, selected_product_family)
+        filtered_df = apply_account_filter(filtered_df, account_selected)
+
+        # Calculate customer metrics using cached function
+        metrics = calculate_customer_metrics(filtered_df)
+
+        # Top customers
+        if not metrics.empty:
+            # top_revenue = metrics.nlargest(10, "total_revenue")
+            #Define Top 10 Using Group By and desc on Customer
+            
+
+
+            top_revenue = metrics.groupby('customer_name').agg({
+                        'total_revenue': 'sum',
+                        'num_transactions': 'sum',
+                        'AOV': 'mean'
+                    }).reset_index()
+
+
+
+
+
+
+            top_transactions = metrics.groupby('customer_name').agg({
+                        'total_revenue': 'sum',
+                        'num_transactions': 'sum',
+                        'AOV': 'mean'
+                    }).reset_index()
+            
+
+
+            # KPI Cards
+            col1, col2, col3, col4 = st.columns([0.6, 1, 0.5, 1])
+
+            with col1:
+                st.metric("💰 Total Revenue", f"€{metrics['total_revenue'].sum():,.0f}")
+
+            with col2:
+                name = top_revenue.iloc[0]['customer_name']
+                total_rev = top_revenue.iloc[0]['total_revenue']
+                st.metric("🏆 Top Customer", name, f"€{total_rev:,.0f}")
+            with col3:
+                st.metric("📦 Average Order Value", f"€{metrics['AOV'].mean():,.0f}")
+            with col4:
+                most_active = top_transactions.iloc[0]
+                name = most_active["customer_name"]
+                st.metric("🔄 Most Active Customer", name, f"{int(most_active['num_transactions'])} orders")
+
+
+        filtered_sales = apply_date_filter(df_product_sales_merged, start_date, end_date)
+        filtered_sales = apply_country_filter(filtered_sales, selected_country)
+        filtered_sales = apply_source_filter(filtered_sales, source)
+        filtered_sales = apply_invoice_status_filter(filtered_sales, selected_status)
+        filtered_sales = apply_account_filter(filtered_sales, account_selected)
+
+        # Calculate product metrics using cached function
+        product_metrics = calculate_product_metrics(filtered_sales, df_product_clean)
+        product_metrics = apply_product_family_filter(product_metrics, selected_product_family)
+        if not product_metrics.empty:
+            product_metrics = product_metrics[product_metrics["margin_%"] > 0]
+        # Top products
+        if not product_metrics.empty:
+            # top_units = product_metrics.nlargest(10, "quantity")
+            top_units = product_metrics.groupby(['product_name', 'item_family_name']).agg({
+                        'quantity': 'sum',
+                        'revenue': 'sum',
+                        'total_gross_margin': 'sum', 
+                        'margin_%': 'mean', 
+                        'margin_contribution_%': 'mean'
+                    }).reset_index()
+      
+   
+            top_product_revenue = product_metrics.groupby(['product_name', 'item_family_name']).agg({
+                        'quantity': 'sum',
+                        'revenue': 'sum',
+                        'total_gross_margin': 'sum', 
+                        'margin_%': 'mean', 
+                        'margin_contribution_%': 'mean'
+                    }).reset_index()
+            # top_margin = product_metrics.nlargest(10, "total_gross_margin")
+            top_margin = product_metrics[product_metrics["margin_%"] != 100].groupby(['product_name', 'item_family_name']).agg({
+                        'quantity': 'sum',
+                        'revenue': 'sum',
+                        'total_gross_margin': 'sum', 
+                        'margin_%': 'mean', 
+                        'margin_contribution_%': 'mean'
+                    }).reset_index()
+            
+
+            top_customer = product_metrics[product_metrics["margin_%"] != 100].groupby(['customer_name']).agg({
+                        'quantity': 'sum',
+                        'revenue': 'sum',
+                        'total_gross_margin': 'sum', 
+                        'margin_%': 'mean', 
+                        'margin_contribution_%': 'mean'
+                    }).reset_index()
+
+            product_family_margins = product_metrics[product_metrics["margin_%"] != 100].groupby(['item_family_name']).agg({
+                        'quantity': 'sum',
+                        'revenue': 'sum',
+                        'total_gross_margin': 'sum', 
+                        'margin_%': 'mean', 
+                        'margin_contribution_%': 'mean'
+                    }).reset_index()
+            
+        
+            # Product KPIs
+            col1, col3, col4, col5 = st.columns([0.3, 0.8, 0.3, 0.3])
+
+            with col1:
+                st.metric("📊 Total Units Sold", f"{int(product_metrics['quantity'].sum()):,}")
+
+            with col3:
+                best_seller = top_units.nlargest(1, "quantity").iloc[0]
+                name = best_seller["product_name"]
+                st.metric("🏅 Best Seller", name, f"{int(best_seller['quantity']):,} units")
+
+            with col4:
+                st.metric("💵 Total Gross Margin", f"€{product_metrics[product_metrics['margin_%'] != 100]['total_gross_margin'].sum():,.0f}")
+
+            with col5:
+                avg_margin = product_metrics[product_metrics["margin_%"] != 100]["margin_%"].mean()
+                st.metric("📈 Avg Margin %", f"{avg_margin:.1f}%")
 
 
     # ========================================
@@ -502,7 +707,7 @@ if authentication_status:
         # st.markdown('<div class="filter-container">', unsafe_allow_html=True)
         st.subheader("🔍 Filters")
 
-        col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 2])
+        col1, col2, col3, col4, col5, col6 = st.columns([2, 2, 2, 2, 2, 2])
 
         min_date = df_sales_order_merged["date"].min()
         max_date = df_sales_order_merged["date"].max()
@@ -568,7 +773,9 @@ if authentication_status:
     "Filets", "Inktvissen en Celaphoden", "Hele vis", "Snacks",
     "Overig", "PD Garnalen", "HOSO", "Mollusken", "Zeevruchten", "Groente",
     "Steaks", "PUD Cocktail", "Party Garnalen", "Surimi", "HLSO"
-])
+])           
+        with col6:
+            account_selected = st.multiselect("Select Account", ["NL", "EU"])
 
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -581,6 +788,7 @@ if authentication_status:
         filtered_sales = apply_customer_filter(filtered_sales, selected_customers)
         filtered_sales = apply_product_filter(filtered_sales, selected_products)
         filtered_sales = apply_invoice_status_filter(filtered_sales, selected_status)
+        filtered_sales = apply_account_filter(filtered_sales, account_selected)
 
         # Calculate product metrics using cached function
         product_metrics = calculate_product_metrics(filtered_sales, df_product_clean)
@@ -892,7 +1100,7 @@ if authentication_status:
         # st.markdown('<div class="filter-container">', unsafe_allow_html=True)
         st.subheader("🔍 Filters")
 
-        col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 2])
+        col1, col2, col3, col4, col5, col6 = st.columns([2, 2, 2, 2, 2, 2])
 
         min_date = df_sales_order_merged["date"].min()
         max_date = df_sales_order_merged["date"].max()
@@ -944,20 +1152,22 @@ if authentication_status:
             selected_country = st.selectbox("🌍Country", countries)
 
         with col3:  
-            source = st.multiselect("DataSource", ["OneUp", "SumUp"])
+            source = st.multiselect("Data Source ", ["OneUp", "SumUp"])
         
         with col4:
             selected_status = st.multiselect(
-            "SelectInvoice Status:",
+            "Select Invoice Status: ",
             options=["Paid", "Unpaid"])
         with col5:
             selected_product_family = st.multiselect(
-            "ProductFamily", 
+            "Product Family ", 
             options=[
     "Filets", "Inktvissen en Celaphoden", "Hele vis", "Snacks",
     "Overig", "PD Garnalen", "HOSO", "Mollusken", "Zeevruchten", "Groente",
     "Steaks", "PUD Cocktail", "Party Garnalen", "Surimi", "HLSO"
 ])
+        with col6:
+            account_selected = st.multiselect("Select Account ", ["NL", "EU"])
 
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -969,6 +1179,7 @@ if authentication_status:
         filtered_df = apply_product_family_filter(filtered_df, selected_product_family)
         filtered_df = apply_customer_filter(filtered_df, selected_customers)
         filtered_df = apply_product_filter(filtered_df, selected_products)
+        filtered_df = apply_account_filter(filtered_df, account_selected)
 
 
 
@@ -1012,13 +1223,13 @@ if authentication_status:
                 st.metric("💰 Total Revenue", f"€{metrics['total_revenue'].sum():,.0f}")
 
             with col2:
-                name = top_revenue.iloc[0]['customer_name']
-                total_rev = top_revenue.iloc[0]['total_revenue']
+                name = top_revenue.nlargest(1, "total_revenue").iloc[0]['customer_name']
+                total_rev = top_revenue.nlargest(1, "total_revenue").iloc[0]['total_revenue']
                 st.metric("🏆 Top Customer", name, f"€{total_rev:,.0f}")
             with col3:
                 st.metric("📦 Average Order Value", f"€{metrics['AOV'].mean():,.0f}")
             with col4:
-                most_active = top_transactions.iloc[0]
+                most_active = top_transactions.nlargest(1, "num_transactions").iloc[0]
                 name = most_active["customer_name"]
                 st.metric("🔄 Most Active Customer", name, f"{int(most_active['num_transactions'])} orders")
             st.markdown("---")
@@ -1183,74 +1394,12 @@ if authentication_status:
 
 
 
-    # ========================================
-    # TAB 3: INVENTORY
-    # ========================================
-    if 'inventory_updated' not in st.session_state:
-        st.session_state.inventory_updated = False
-    
-    with tab4:
-
-        # --- 🧾 Inventory display ---
-        st.write("### Product Inventory")
-
-        if st.session_state.inventory_updated:
-            st.success("✅ Inventory updated successfully!")
-            st.session_state.inventory_updated = False
-
-        # Display headers
-        product_list = df_product_inventory["product_name"].tolist()
-
-        search_selection = st.selectbox(
-            "Search or select a product",
-            options=[""] + product_list,
-            index=0,
-            placeholder="Type to search for a product..."
-        )
-
-        # Filter dataframe
-        if search_selection:
-            filtered_df = df_product_inventory[df_product_inventory["product_name"] == search_selection]
-        else:
-            filtered_df = df_product_inventory
-
-        # --- 🧾 Display headers ---
-        cols = st.columns([4, 1])
-        headers = ["Product Name", "Available Quantity"]
-        for col, header in zip(cols, headers):
-            col.markdown(f"**{header}**")
-
-        # --- 🧮 Editable quantities ---
-        updated_quantities = {}
-
-        for idx, row in filtered_df.iterrows():
-            cols = st.columns([4, 1])
-            with cols[0]:
-                st.text(row["product_name"])
-            with cols[1]:
-                updated_quantities[idx] = st.number_input(
-                    "",
-                    value=int(row["current_quantity"]),
-                    min_value=0,
-                    key=f"qty_{idx}"
-                )
-
-        # --- 💾 Save updates ---
-        if st.button("Save Changes"):
-            for idx, qty in updated_quantities.items():
-                df_product_inventory.at[idx, "current_quantity"] = qty
-            update_product_inventory(df_product_inventory)
-            load_data.clear()
-            st.session_state.inventory_updated = True
-            st.rerun()
-
-
 
     # ========================================
     # TAB 4: FORECAST
     # ========================================
     # --- Page Layout ---
-    with tab5:
+    with tab4:
         
         st.session_state.active_tab = "🚀 Forecast"
         # ---- Product detail view ----
@@ -1336,7 +1485,7 @@ if authentication_status:
     # ========================================
     # TAB 3: INVOICE MANAGER
     # ========================================
-    with tab6:
+    with tab5:
         st.header("🧾 Invoice Manager")
         st.markdown("**Select and download invoices in bulk**")
         st.markdown("---")
@@ -1400,6 +1549,13 @@ if authentication_status:
                 options=invoice_numbers_list,
                 key="invoice_number"
             )
+
+        with col7:
+            account_selected = st.multiselect(
+                "Account ", 
+                options=["NL", "EU"],
+                key="invoice_account"
+            )
         
         st.markdown('</div>', unsafe_allow_html=True)
         
@@ -1407,7 +1563,7 @@ if authentication_status:
         filtered_invoices = apply_date_filter(df_invoices, inv_start_date, inv_end_date)
         filtered_invoices = apply_country_filter(filtered_invoices, inv_selected_country)
         filtered_invoices = apply_invoice_filter(filtered_invoices, invoice_id)
-
+        filtered_invoices = apply_account_filter(filtered_invoices, account_selected)
         # st.dataframe(filtered_invoices)
 
 
