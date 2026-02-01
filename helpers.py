@@ -7,10 +7,17 @@ import smtplib
 from email.message import EmailMessage
 from google.oauth2.service_account import Credentials
 
-def print_invoice(invoice_id, format):
+def print_invoice(invoice_id, format, df):
     url = f"https://api.oneup.com/v1/invoices/{invoice_id}/print.{format}"
-    API_EMAIL = os.getenv('API_EMAIL')
-    API_KEY = os.getenv('API_KEY')
+
+    account = df[df["invoice_id"] == invoice_id]["account"].values[0]
+
+    if account == "EU":
+        API_EMAIL = os.getenv('API_EMAIL_EU')
+        API_KEY = os.getenv('API_KEY_EU')
+    elif account == "NL":   
+        API_EMAIL = os.getenv('API_EMAIL_NL')
+        API_KEY = os.getenv('API_KEY_NL')
     response = requests.get(url, auth=HTTPBasicAuth(API_EMAIL, API_KEY), verify=False)
     
     if response.status_code == 200:
