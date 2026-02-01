@@ -612,15 +612,17 @@ if authentication_status:
                 st.metric("💰 Total Revenue", f"€{metrics['total_revenue'].sum():,.0f}")
 
             with col2:
-                name = top_revenue.iloc[0]['customer_name']
+                name = top_revenue.nlargest(1, "total_revenue").iloc[0]["customer_name"]
                 total_rev = top_revenue.iloc[0]['total_revenue']
-                st.metric("🏆 Top Customer", name, f"€{total_rev:,.0f}")
+                st.metric("🏆 Top Customer by Revenue", name, f"€{total_rev:,.0f}")
+
             with col3:
                 st.metric("📦 Average Order Value", f"€{metrics['AOV'].mean():,.0f}")
             with col4:
-                most_active = top_transactions.iloc[0]
+                most_active = top_transactions.nlargest(1, "num_transactions").iloc[0]
                 name = most_active["customer_name"]
                 st.metric("🔄 Most Active Customer", name, f"{int(most_active['num_transactions'])} orders")
+
 
 
         filtered_sales = apply_date_filter(df_product_sales_merged, start_date, end_date)
@@ -679,17 +681,37 @@ if authentication_status:
                         'margin_contribution_%': 'mean'
                     }).reset_index()
             
+
+            top_customer = product_metrics[product_metrics["margin_%"] != 100].groupby(['customer_name']).agg({
+                        'quantity': 'sum',
+                        'revenue': 'sum',
+                        'total_gross_margin': 'sum', 
+                        'margin_%': 'mean', 
+                        'margin_contribution_%': 'mean'
+                    }).reset_index()
+            
+
+            top_customer = top_customer.nlargest(1, "total_gross_margin")
+
+            name = top_customer.iloc[0]["customer_name"]
+            margin = top_customer.iloc[0]["total_gross_margin"]
+            st.metric("🏆 Top Customer by Margin", name, f"€{margin:,.0f}")
         
             # Product KPIs
-            col1, col3, col4, col5 = st.columns([0.3, 0.8, 0.3, 0.3])
+            col1,col4, col5 = st.columns([0.3, 0.3, 0.3])
 
             with col1:
                 st.metric("📊 Total Units Sold", f"{int(product_metrics['quantity'].sum()):,}")
 
-            with col3:
-                best_seller = top_units.nlargest(1, "quantity").iloc[0]
-                name = best_seller["product_name"]
-                st.metric("🏅 Best Seller", name, f"{int(best_seller['quantity']):,} units")
+            # with col2:
+            #     name = top_units.nlargest(1, "total_gross_margin").iloc[0]["product_name"]
+            #     margin = top_units.nlargest(1, "total_gross_margin").iloc[0]["total_gross_margin"]
+            #     st.metric("🥇 Top Product by Margin", name, f"€{margin:,.0f}")
+
+            # with col3:
+            #     name = top_units.nlargest(1, "revenue").iloc[0]["product_name"]
+            #     revenue = top_units.nlargest(1, "revenue").iloc[0]["revenue"]
+            #     st.metric("🥇 Top Product by Revenue", name, f"€{revenue:,.0f}")
 
             with col4:
                 st.metric("💵 Total Gross Margin", f"€{product_metrics[product_metrics['margin_%'] != 100]['total_gross_margin'].sum():,.0f}")
@@ -697,6 +719,16 @@ if authentication_status:
             with col5:
                 avg_margin = product_metrics[product_metrics["margin_%"] != 100]["margin_%"].mean()
                 st.metric("📈 Avg Margin %", f"{avg_margin:.1f}%")
+
+
+            name = top_units.nlargest(1, "total_gross_margin").iloc[0]["product_name"]
+            margin = top_units.nlargest(1, "total_gross_margin").iloc[0]["total_gross_margin"]
+            st.metric("🥇 Top Product by Margin", name, f"€{margin:,.0f}")
+
+            name = top_units.nlargest(1, "revenue").iloc[0]["product_name"]
+            revenue = top_units.nlargest(1, "revenue").iloc[0]["revenue"]
+            st.metric("🥇 Top Product by Revenue", name, f"€{revenue:,.0f}")
+
 
 
     # ========================================
