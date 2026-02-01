@@ -496,7 +496,12 @@ if authentication_status:
     manual_refresh = st.button("Trigger Data Refresh")
 
     if manual_refresh:
-        trigger_manual_refresh()
+        refresh = trigger_manual_refresh()
+
+        if refresh == 204:
+            st.success("✅ Data refresh triggered successfully! Please wait a few minutes and then reload the app to see updated data.")
+        else:
+            st.error("❌ Failed to trigger data refresh. Please contact admin.")
 
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["🐟 Overview", "📈 Product Analytics", "👥 Customer Analytics", "🚀 Forecast", "🧾 Invoice Manager"])
