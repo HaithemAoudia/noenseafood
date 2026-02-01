@@ -1868,16 +1868,17 @@ if authentication_status:
             # Show download and email buttons if PDF exists
             
         if 'pdf_data' in st.session_state and st.session_state.pdf_data:
-            col1, col2 = st.columns(2)
+            col2, col1 = st.columns(2)
             
             with col1:
-                st.download_button(
-                    label="⬇️ Download Merged PDF",
-                    data=st.session_state.pdf_data,
-                    file_name="merged_invoices.pdf",
-                    mime="application/pdf",
-                    use_container_width=True
-                )
+                if download_option == "Download Merged PDF for Bulk Printing":
+                    st.download_button(
+                        label="⬇️ Download Merged PDF",
+                        data=st.session_state.pdf_data,
+                        file_name="merged_invoices.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
             
             with col2:
                 if st.button("📧 Send to Email", use_container_width=True):
