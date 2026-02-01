@@ -20,7 +20,7 @@ from analytics import calculate_customer_metrics, calculate_product_metrics
 import os
 from dotenv import load_dotenv
 import streamlit as st
-import psutil
+# import psutil
 
 
 # process = psutil.Process(os.getpid())
