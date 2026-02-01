@@ -1,5 +1,5 @@
 from pipeline.resources.load import load_data
-
+import os
 
 google_cred = {
 'type': os.getenv('TYPE'),
