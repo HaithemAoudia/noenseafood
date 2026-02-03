@@ -556,14 +556,14 @@ if authentication_status:
             countries = ["All"] + sorted(df_sales_order_merged["country"].dropna().unique().tolist())
             selected_country = st.selectbox(" 🌍Country", countries)
 
-        with col3:  
-            source = st.multiselect(" Data Source ", ["OneUp", "SumUp"])
+        # with col3:  
+        #     source = st.multiselect(" Data Source ", ["OneUp", "SumUp"])
         
-        with col4:
+        with col3:
             selected_status = st.multiselect(
             " Select Invoice Status: ",
             options=["Paid", "Unpaid"])
-        with col5:
+        with col4:
             selected_product_family = st.multiselect(
             " Product Family ", 
             options=[
@@ -571,7 +571,7 @@ if authentication_status:
     "Overig", "PD Garnalen", "HOSO", "Mollusken", "Zeevruchten", "Groente",
     "Steaks", "PUD Cocktail", "Party Garnalen", "Surimi", "HLSO"
 ])
-        with col6:
+        with col5:
             account_selected = st.multiselect(" Select Account ", ["NL", "EU"])
 
         st.markdown('</div>', unsafe_allow_html=True)
@@ -579,7 +579,7 @@ if authentication_status:
         # ========== APPLY FILTERS ==========
         filtered_df = apply_date_filter(df_sales_order_merged, start_date, end_date)
         filtered_df = apply_country_filter(filtered_df, selected_country)
-        filtered_df = apply_source_filter(filtered_df, source)
+        # filtered_df = apply_source_filter(filtered_df, source)
         filtered_df = apply_invoice_status_filter(filtered_df, selected_status)
         filtered_df = apply_product_family_filter(filtered_df, selected_product_family)
         filtered_df = apply_account_filter(filtered_df, account_selected)
@@ -635,7 +635,7 @@ if authentication_status:
 
         filtered_sales = apply_date_filter(df_product_sales_merged, start_date, end_date)
         filtered_sales = apply_country_filter(filtered_sales, selected_country)
-        filtered_sales = apply_source_filter(filtered_sales, source)
+        # filtered_sales = apply_source_filter(filtered_sales, source)
         filtered_sales = apply_invoice_status_filter(filtered_sales, selected_status)
         filtered_sales = apply_account_filter(filtered_sales, account_selected)
 
@@ -799,14 +799,14 @@ if authentication_status:
             countries = ["All"] + sorted(df_sales_order_merged["country"].dropna().unique().tolist())
             selected_country = st.selectbox("🌍 Country", countries)
 
-        with col3:  
-            source = st.multiselect("Data Source", ["OneUp", "SumUp"])
+        # with col3:  
+        #     source = st.multiselect("Data Source", ["OneUp", "SumUp"])
         
-        with col4:
+        with col3:
             selected_status = st.multiselect(
             "Select Invoice Status:",
             options=["Paid", "Unpaid"])
-        with col5:
+        with col4:
             selected_product_family = st.multiselect(
             "Product Family", 
             options=[
@@ -814,7 +814,7 @@ if authentication_status:
     "Overig", "PD Garnalen", "HOSO", "Mollusken", "Zeevruchten", "Groente",
     "Steaks", "PUD Cocktail", "Party Garnalen", "Surimi", "HLSO"
 ])           
-        with col6:
+        with col5:
             account_selected = st.multiselect("Select Account", ["NL", "EU"])
 
         st.markdown('</div>', unsafe_allow_html=True)
@@ -824,7 +824,7 @@ if authentication_status:
         # Apply filters to product data
         filtered_sales = apply_date_filter(df_product_sales_merged, start_date, end_date)
         filtered_sales = apply_country_filter(filtered_sales, selected_country)
-        filtered_sales = apply_source_filter(filtered_sales, source)
+        # filtered_sales = apply_source_filter(filtered_sales, source)
         filtered_sales = apply_customer_filter(filtered_sales, selected_customers)
         filtered_sales = apply_product_filter(filtered_sales, selected_products)
         filtered_sales = apply_invoice_status_filter(filtered_sales, selected_status)
@@ -1188,14 +1188,14 @@ if authentication_status:
             countries = ["All"] + sorted(df_sales_order_merged["country"].dropna().unique().tolist())
             selected_country = st.selectbox("🌍Country", countries)
 
-        with col3:  
-            source = st.multiselect("Data Source ", ["OneUp", "SumUp"])
+        # with col3:  
+        #     source = st.multiselect("Data Source ", ["OneUp", "SumUp"])
         
-        with col4:
+        with col3:
             selected_status = st.multiselect(
             "Select Invoice Status: ",
             options=["Paid", "Unpaid"])
-        with col5:
+        with col4:
             selected_product_family = st.multiselect(
             "Product Family ", 
             options=[
@@ -1203,7 +1203,7 @@ if authentication_status:
     "Overig", "PD Garnalen", "HOSO", "Mollusken", "Zeevruchten", "Groente",
     "Steaks", "PUD Cocktail", "Party Garnalen", "Surimi", "HLSO"
 ])
-        with col6:
+        with col5:
             account_selected = st.multiselect("Select Account ", ["NL", "EU"])
 
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1211,7 +1211,7 @@ if authentication_status:
         # ========== APPLY FILTERS ==========
         filtered_df = apply_date_filter(df_sales_order_merged, start_date, end_date)
         filtered_df = apply_country_filter(filtered_df, selected_country)
-        filtered_df = apply_source_filter(filtered_df, source)
+        # filtered_df = apply_source_filter(filtered_df, source)
         filtered_df = apply_invoice_status_filter(filtered_df, selected_status)
         filtered_df = apply_product_family_filter(filtered_df, selected_product_family)
         filtered_df = apply_customer_filter(filtered_df, selected_customers)
@@ -1356,7 +1356,7 @@ if authentication_status:
         # Apply filters to product data
         filtered_sales = apply_date_filter(df_product_sales_merged, start_date, end_date)
         filtered_sales = apply_country_filter(filtered_sales, selected_country)
-        filtered_sales = apply_source_filter(filtered_sales, source)
+        # filtered_sales = apply_source_filter(filtered_sales, source)
         filtered_sales = apply_customer_filter(filtered_sales, selected_customers)
         filtered_sales = apply_product_filter(filtered_sales, selected_products)
 
