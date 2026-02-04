@@ -62,4 +62,4 @@ def apply_account_filter(df, accounts):
     if len(accounts) == 0:
         return df
     else:
-        return df[~df["account"].isin(accounts)]
+        return df[df["account"].isin(accounts)]
