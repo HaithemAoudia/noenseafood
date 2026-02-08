@@ -350,6 +350,15 @@ if authentication_status:
         df_sales["total_order_line"] = pd.to_numeric(df_sales["total_order_line"], errors="coerce")
         df_product["purchase_price"] = pd.to_numeric(df_product["purchase_price"], errors="coerce")
         df_transactions_sumup["date"] = pd.to_datetime(df_transactions_sumup["timestamp"], errors="coerce")
+
+        # #Get item id to product name in forecast
+        # df_product_inventory_analysis = pd.merge(
+        #     df_product_inventory_analysis,
+        #     df_product[["id", "name", "account"]],
+        #     left_on="product_name",
+        #     right_on="name",
+        #     how="left"
+        # ).drop(columns="name")
         
         # Filter successful transactions only
         df_transactions_sumup = df_transactions_sumup[df_transactions_sumup["status"] == "SUCCESSFUL"]
@@ -443,6 +452,7 @@ if authentication_status:
    
 
     customer_list = df_customers['full_name'].dropna().unique().tolist()
+
 
     product_list = df_sales_order_merged['product_name'].dropna().unique().tolist()
 
@@ -833,9 +843,10 @@ if authentication_status:
         # Calculate product metrics using cached function
         product_metrics = calculate_product_metrics(filtered_sales, df_product_clean)
         product_metrics = apply_product_family_filter(product_metrics, selected_product_family)
-        product_metrics = product_metrics[product_metrics["margin_%"] > 0]
+        
         # Top products
         if not product_metrics.empty:
+            product_metrics = product_metrics[product_metrics["margin_%"] > 0]
             # top_units = product_metrics.nlargest(10, "quantity")
             top_units = product_metrics.groupby(['product_name', 'item_family_name']).agg({
                         'quantity': 'sum',
@@ -1363,9 +1374,10 @@ if authentication_status:
         # Calculate product metrics using cached function
         product_metrics = calculate_product_metrics(filtered_sales, df_product_clean)
         product_metrics = apply_product_family_filter(product_metrics, selected_product_family)
-        product_metrics = product_metrics[product_metrics["margin_%"] > 0]
+    
         # Top products
         if not product_metrics.empty:
+            product_metrics = product_metrics[product_metrics["margin_%"] > 0]
             top_customer = product_metrics[product_metrics["margin_%"] != 100].groupby(['customer_name']).agg({
                         'quantity': 'sum',
                         'revenue': 'sum',
@@ -1442,17 +1454,31 @@ if authentication_status:
         # ---- Product detail view ----
         st.subheader("📈 Historical and Forecast Product Units Sold")
 
-        product_options = df_product_inventory_analysis["product_name"].unique()
+        selected_account = st.selectbox("Select Account",  ["EU", "NL"])
+
+        filtered = df_product_inventory_analysis[
+            df_product_inventory_analysis["account"] == selected_account
+        ]
+
+        product_name_options = filtered["product_search"].unique()
+
+        # product_number_options = df_product_inventory_analysis["product_number"].unique()
+
+        selected_product = st.selectbox("Select a product to view trend", product_name_options)
+
+        # selected_product_number = st.multiselect("Select product number", product_number_options)
         
-        selected_product = st.selectbox("Select a product to view trend", product_options)
+
+        filtered = df_product_inventory_analysis[
+            df_product_inventory_analysis["product_search"] == selected_product
+        ]
+
+
 
         if selected_product:
             # Prepare product data
-            product_df = (
-                df_product_inventory_analysis[
-                    df_product_inventory_analysis["product_name"] == selected_product
-                ]
-                .drop(columns=["product_name"])
+            product_df = (filtered
+                .drop(columns=["product_name", "account", "product_search"])
                 .T
                 .reset_index()
             )
@@ -1510,10 +1536,10 @@ if authentication_status:
 
         st.subheader("Full Data Inventory Consumption")
         # search = st.text_input("🔍 Search product name", "")
-        filtered = df_product_inventory_analysis[
-            df_product_inventory_analysis["product_name"].str.contains(selected_product, case=False, na=False)
-        ]
-        st.dataframe(filtered, use_container_width=True, height=400)
+        # filtered = df_product_inventory_analysis[
+        #     df_product_inventory_analysis["product_name"].str.contains(selected_product, case=False, na=False)
+        # ]
+        st.dataframe(filtered.drop(columns=["account", "product_search"]), use_container_width=True, height=400)
 
 
 
@@ -1593,6 +1619,8 @@ if authentication_status:
                 options=["NL", "EU"],
                 key="invoice_account"
             )
+
+        selected_customers = st.multiselect(" Select Customer ", sorted(customer_list), key="invoice_customer")
         
         st.markdown('</div>', unsafe_allow_html=True)
         
@@ -1601,6 +1629,8 @@ if authentication_status:
         filtered_invoices = apply_country_filter(filtered_invoices, inv_selected_country)
         filtered_invoices = apply_invoice_filter(filtered_invoices, invoice_id)
         filtered_invoices = apply_account_filter(filtered_invoices, account_selected)
+        filtered_invoices = apply_product_family_filter(filtered_invoices, selected_product_family)
+        filtered_invoices = apply_customer_filter(filtered_invoices, selected_customers)
         # st.dataframe(filtered_invoices)
 
 
@@ -1669,8 +1699,21 @@ if authentication_status:
         
         # ========== INVOICE TABLE WITH CHECKBOXES ==========
         if len(filtered_invoices) > 0:
+                        ## Sort by Date Functionality
+            sort_order = st.radio(
+                "Sort by Date",
+                options=["Newest first", "Oldest first"],
+                horizontal=True
+            )
+
+            filtered_invoices = filtered_invoices.sort_values(
+                by="date",
+                ascending=(sort_order == "Oldest first")
+            )
+
+
             st.markdown("##### Select invoices to download:")
-            filtered_invoices = filtered_invoices.sort_values(by='date', ascending= False)
+            # filtered_invoices = filtered_invoices.sort_values(by='date', ascending= False)
             # Use pagination for large datasets
             items_per_page = 50
             total_pages = (len(filtered_invoices) - 1) // items_per_page + 1
@@ -1688,12 +1731,14 @@ if authentication_status:
             header_cols = st.columns([1, 1.5, 1.5, 2, 1.5, 1.5, 1, 1, 0.8, 1.5])
             headers = ["Select", "Invoice ID", "Invoice Number", "Customer", "Country", "City", "Date", "Amount", "Sent", "Status"]
             
+
+
+
             for col, header in zip(header_cols, headers):
                 col.markdown(f"**{header}**")
             
             st.markdown("---")
 
-            
             # Display each invoice with checkbox
             for idx, row in display_invoices.iterrows():
                 cols = st.columns([1, 1.5, 1.5, 2, 1.5, 1.5, 1, 1, 0.8, 1.5])
