@@ -799,8 +799,8 @@ if authentication_status:
                 end_date = datetime(max_date.year, 12, 31)
 
             elif selected_range == "Custom Range":
-                start_date = st.date_input("📅 Start Date", value=min_date, min_value=min_date, max_value=max_date)
-                end_date = st.date_input("📅 End Date", value=max_date, min_value=min_date, max_value=max_date)
+                start_date = st.date_input(" 📅 Start Date", value=min_date, min_value=min_date, max_value=max_date)
+                end_date = st.date_input(" 📅 End Date", value=max_date, min_value=min_date, max_value=max_date)
 
             else:
                 start_date, end_date = min_date, max_date
@@ -2157,4 +2157,5 @@ if authentication_status:
 
         if "initial_rerun_done" not in st.session_state:
             st.session_state.initial_rerun_done = True
+
             st.rerun()
