@@ -1,0 +1,51 @@
+name: Daily Noen Data Load
+
+on:
+  schedule:
+    # Every 6 hours
+    - cron: "0 */6 * * *"
+
+  workflow_dispatch:
+
+
+env:
+  # Environment Variables
+  AUTH_PROVIDER_X509_CERT_URL: ${{ vars.AUTH_PROVIDER_X509_CERT_URL }}
+  PROJECT_ID: ${{ vars.PROJECT_ID }}
+  TYPE: ${{ vars.TYPE }}
+  UNIVERSE_DOMAIN: ${{ vars.UNIVERSE_DOMAIN }}
+  
+  # Environment Secrets
+  API_EMAIL_EU: ${{ secrets.API_EMAIL_EU }}
+  API_KEY_EU: ${{ secrets.API_KEY_EU }}
+  API_EMAIL_NL: ${{ secrets.API_EMAIL_NL }}
+  API_KEY_NL: ${{ secrets.API_KEY_NL }}
+  AUTH_URI: ${{ secrets.AUTH_URI }}
+  CLIENT_ID: ${{ secrets.CLIENT_ID }}
+  PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+  PRIVATE_KEY_ID: ${{ secrets.PRIVATE_KEY_ID }}
+  SHEET_ID: ${{ secrets.SHEET_ID }}
+  TOKEN_URI: ${{ secrets.TOKEN_URI }}
+  CLIENT_EMAIL: ${{ secrets.CLIENT_EMAIL }}
+  CLIENT_X509_CERT_URL: ${{ secrets.CLIENT_X509_CERT_URL }}
+  
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+    environment: api_credentials  # Use the environment you created
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run script
+        run: python full_refresh.py
+
