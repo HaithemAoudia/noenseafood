@@ -1,4 +1,4 @@
-name: Daily Noen Data Load
+name: Full Data Refresh
 
 on:
   schedule:
