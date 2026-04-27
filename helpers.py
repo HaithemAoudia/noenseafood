@@ -6,18 +6,18 @@ import json
 import smtplib
 from email.message import EmailMessage
 from google.oauth2.service_account import Credentials
-
+from config import get_secret
 def print_invoice(invoice_id, format, df):
     url = f"https://api.oneup.com/v1/invoices/{invoice_id}/print.{format}"
 
     account = df[df["invoice_id"] == invoice_id]["account"].values[0]
 
     if account == "EU":
-        API_EMAIL = os.getenv('API_EMAIL_EU')
-        API_KEY = os.getenv('API_KEY_EU')
+        API_EMAIL = get_secret('API_EMAIL_EU')
+        API_KEY = get_secret('API_KEY_EU')
     elif account == "NL":   
-        API_EMAIL = os.getenv('API_EMAIL_NL')
-        API_KEY = os.getenv('API_KEY_NL')
+        API_EMAIL = get_secret('API_EMAIL_NL')
+        API_KEY = get_secret('API_KEY_NL')
     response = requests.get(url, auth=HTTPBasicAuth(API_EMAIL, API_KEY), verify=False)
     
     if response.status_code == 200:
@@ -33,7 +33,7 @@ def print_invoice(invoice_id, format, df):
 
 
 def trigger_manual_refresh():
-    token = os.getenv('GITHUB_API')      
+    token = get_secret('GITHUB_API')      
     owner = "haithemaoudia"
     repo = "noenseafood"
     workflow = "actions.yaml"                
@@ -99,23 +99,23 @@ def send_email_invoice(file_data, email_sender, email_password, email_reciever, 
 def get_product_inventory(product_name:str):
     
     google_cred = {
-    'type': os.getenv('TYPE'),
-    'project_id': os.getenv('PROJECT_ID'),
-    'private_key_id': os.getenv('PRIVATE_KEY_ID'),
-    'private_key': os.getenv('PRIVATE_KEY').replace('\\n', '\n') if os.getenv('PRIVATE_KEY') else None,
-    'client_email': os.getenv('CLIENT_EMAIL'),
-    'client_id': os.getenv('CLIENT_ID'),
-    'auth_uri': os.getenv('AUTH_URI'),
-    'token_uri': os.getenv('TOKEN_URI'),
-    'auth_provider_x509_cert_url': os.getenv('AUTH_PROVIDER_X509_CERT_URL'),
-    'client_x509_cert_url': os.getenv('CLIENT_X509_CERT_URL'),
-    'universe_domain': os.getenv('UNIVERSE_DOMAIN'),
+    'type': get_secret('TYPE'),
+    'project_id': get_secret('PROJECT_ID'),
+    'private_key_id': get_secret('PRIVATE_KEY_ID'),
+    'private_key': get_secret('PRIVATE_KEY').replace('\\n', '\n') if get_secret('PRIVATE_KEY') else None,
+    'client_email': get_secret('CLIENT_EMAIL'),
+    'client_id': get_secret('CLIENT_ID'),
+    'auth_uri': get_secret('AUTH_URI'),
+    'token_uri': get_secret('TOKEN_URI'),
+    'auth_provider_x509_cert_url': get_secret('AUTH_PROVIDER_X509_CERT_URL'),
+    'client_x509_cert_url': get_secret('CLIENT_X509_CERT_URL'),
+    'universe_domain': get_secret('UNIVERSE_DOMAIN'),
 }
     scope = ["https://www.googleapis.com/auth/spreadsheets"]
     creds = Credentials.from_service_account_info(google_cred, scopes=scope)
     client = gspread.authorize(creds)
     
-    sheet_id = os.getenv('SHEET_ID')
+    sheet_id = get_secret('SHEET_ID')
     workbook = client.open_by_key(sheet_id)
     sheet = workbook.worksheet("Product Inventory")
     

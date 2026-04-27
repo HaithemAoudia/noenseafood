@@ -2,7 +2,7 @@ import os
 import gspread
 import pandas as pd
 from google.oauth2.service_account import Credentials
-
+from config import get_secret
 from dotenv import load_dotenv
 
 
@@ -11,17 +11,17 @@ load_dotenv('noenseafood.env')
 
 
 google_cred = {
-    'type': os.getenv('TYPE'),
-    'project_id': os.getenv('PROJECT_ID'),
-    'private_key_id': os.getenv('PRIVATE_KEY_ID'),
-    'private_key': os.getenv('PRIVATE_KEY').replace('\\n', '\n') if os.getenv('PRIVATE_KEY') else None,
-    'client_email': os.getenv('CLIENT_EMAIL'),
-    'client_id': os.getenv('CLIENT_ID'),
-    'auth_uri': os.getenv('AUTH_URI'),
-    'token_uri': os.getenv('TOKEN_URI'),
-    'auth_provider_x509_cert_url': os.getenv('AUTH_PROVIDER_X509_CERT_URL'),
-    'client_x509_cert_url': os.getenv('CLIENT_X509_CERT_URL'),
-    'universe_domain': os.getenv('UNIVERSE_DOMAIN'),
+    'type': get_secret('TYPE'),
+    'project_id': get_secret('PROJECT_ID'),
+    'private_key_id': get_secret('PRIVATE_KEY_ID'),
+    'private_key': get_secret('PRIVATE_KEY').replace('\\n', '\n') if get_secret('PRIVATE_KEY') else None,
+    'client_email': get_secret('CLIENT_EMAIL'),
+    'client_id': get_secret('CLIENT_ID'),
+    'auth_uri': get_secret('AUTH_URI'),
+    'token_uri': get_secret('TOKEN_URI'),
+    'auth_provider_x509_cert_url': get_secret('AUTH_PROVIDER_X509_CERT_URL'),
+    'client_x509_cert_url': get_secret('CLIENT_X509_CERT_URL'),
+    'universe_domain': get_secret('UNIVERSE_DOMAIN'),
 }
 
 
@@ -31,7 +31,7 @@ def load_data():
         creds = Credentials.from_service_account_info(google_cred, scopes=scope)
         client = gspread.authorize(creds)
         
-        sheet_id = os.getenv('SHEET_ID')
+        sheet_id = get_secret('SHEET_ID')
         workbook = client.open_by_key(sheet_id)  
         
         df_sales = pd.DataFrame(workbook.worksheet("OneUp - Invoices").get_all_records()).drop_duplicates()
