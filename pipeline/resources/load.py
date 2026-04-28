@@ -114,7 +114,7 @@ def full_data_load(type, sheet_name, google_cred):
         while True:
             try:
                 #fetch data from API
-                json = fetch_data(type="invoices", limit="100", offset=f"{offset}", API_EMAIL=API_EMAIL, API_KEY=API_KEY)
+                json = fetch_data(type=type, limit="100", offset=f"{offset}", API_EMAIL=API_EMAIL, API_KEY=API_KEY)
 
                 if not json:
                         print(f"No data returned for {type} — finished.")
