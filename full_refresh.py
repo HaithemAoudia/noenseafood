@@ -19,5 +19,8 @@ google_cred = {
 
 if __name__ == "__main__":
     full_data_load(type="invoices", sheet_name="OneUp - Invoices", google_cred=google_cred)
+    print("✅ Invoices loaded successfully.")
     full_data_load(type="items", sheet_name="OneUp - Products", google_cred=google_cred)
+    print("✅ Products loaded successfully.")
     full_data_load(type="customers", sheet_name="OneUp - Customers", google_cred=google_cred)
+    print("✅ Customers loaded successfully.")

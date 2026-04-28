@@ -102,7 +102,7 @@ def full_data_load(type, sheet_name, google_cred):
     offset = 0
     batch_size = 100
     header = True
-
+    print(f"Starting full data load for {type}")
     for account in ["EU", "NL"]:
         offset = 0
         if account == "EU":
@@ -114,10 +114,10 @@ def full_data_load(type, sheet_name, google_cred):
         while True:
             try:
                 #fetch data from API
-                json = fetch_data(type="invoices", limit="100", offset=f"{offset}", API_EMAIL=API_EMAIL, API_KEY=API_KEY)
+                json = fetch_data(type=type, limit="100", offset=f"{offset}", API_EMAIL=API_EMAIL, API_KEY=API_KEY)
 
                 if not json:
-                        print("No data returned — finished.")
+                        print(f"No data returned for {type} — finished.")
                         break
 
                 #transform json to pandas df
@@ -130,11 +130,11 @@ def full_data_load(type, sheet_name, google_cred):
 
                 # Check if there are any row where created date is not 2025 for invoices
                 if type == 'invoices':
-                    df = df[df["created_at"] > "2025-01-01"]
+                    df = df[df["created_at"] >= "2025-01-01"]
 
 
                 if df.empty:
-                        print(f"No more data found at offset {offset}. Stopping.")
+                        print(f"No more data found at offset {offset} for {type}. Stopping.")
                         break
 
                 #append 100 rows to excel sheet
@@ -151,7 +151,7 @@ def full_data_load(type, sheet_name, google_cred):
 
                 print(f"Uploaded {len(df)} rows (offset={offset})")
 
-                # time.sleep(0.3)
+                time.sleep(0.3)
 
 
             except Exception as e:
