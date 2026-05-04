@@ -747,8 +747,8 @@ if authentication_status:
                 end_date = datetime(max_date.year, 12, 31)
 
             elif selected_range == "Custom Range":
-                start_date = st.date_input("📅 Start Date", value=min_date, min_value=min_date, max_value=max_date)
-                end_date = st.date_input("📅 End Date", value=max_date, min_value=min_date, max_value=max_date)
+                start_date = st.date_input(" 📅 Start Date", value=min_date, min_value=min_date, max_value=max_date)
+                end_date = st.date_input(" 📅 End Date", value=max_date, min_value=min_date, max_value=max_date)
 
             else:
                 start_date, end_date = min_date, max_date
@@ -2109,106 +2109,5 @@ if authentication_status:
 
         if "initial_rerun_done" not in st.session_state:
             st.session_state.initial_rerun_done = True
+
             st.rerun()
-
-    with tab6:
-        st.subheader("AI Assistant")
-        st.caption("Ask questions about products, customers, sales, or invoices.")
-
-        _emb_model = _load_embedding_model()
-        _prod_emb, _prod_meta = _build_product_emb(df_product, _emb_model)
-        _cust_emb, _cust_meta = _build_customer_emb(df_customers, _emb_model)
-
-        if "agent_messages" not in st.session_state:
-            st.session_state.agent_messages = []
-
-        if "agent_model_index" not in st.session_state:
-            st.session_state.agent_model_index = 0
-
-        if "agent" not in st.session_state:
-            _agent_dataframes = {
-                "df_product_sales_merged": df_product_sales_merged,
-                "df_invoices": df_invoices,
-                "df_product_clean": df_product_clean,
-            }
-            _tools = create_tools(_agent_dataframes, _prod_emb, _prod_meta, _cust_emb, _cust_meta, _emb_model)
-            st.session_state.agent_tools = _tools                                                                                                                                                                                                                                                               
-            st.session_state.agent = build_agent(_tools, SYSTEM_PROMPT, model=MODELS[st.session_state.agent_model_index]) 
-
-        if st.button("Clear conversation"):
-            st.session_state.agent_messages = []
-            st.rerun()
-
-        for _msg in st.session_state.agent_messages:
-            with st.chat_message(_msg["role"]):
-                st.markdown(_msg["content"])
-
-        if _prompt := st.chat_input("Ask about products, customers, sales, or invoices..."):
-            st.session_state.agent_messages.append({"role": "user", "content": _prompt})
-            with st.chat_message("user"):
-                st.markdown(_prompt)
-
-            with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    _history = []
-                    for _m in st.session_state.agent_messages:
-                        if _m["role"] == "user":
-                            _history.append(HumanMessage(content=_m["content"]))
-                        else:
-                            _history.append(AIMessage(content=_m["content"]))
-
-                    def _is_rate_limit(exc):
-                        _body = getattr(exc, "body", None)
-                        if _body and isinstance(_body, dict):
-                            _msg = _body.get("error", {}).get("message", "").lower()
-                        else:
-                            _msg = str(exc).lower()
-                        return "rate limit" in _msg or "rate_limit" in _msg or "429" in _msg
-
-                    _result_messages = None
-                    while _result_messages is None:
-                        try:
-                            _result_messages = invoke_agent(st.session_state.agent, _history)
-                        except Exception as _agent_err:
-                            if _is_rate_limit(_agent_err) and st.session_state.agent_model_index < len(MODELS) - 1:
-                                st.session_state.agent_model_index += 1
-                                _next_model = MODELS[st.session_state.agent_model_index]
-                                st.toast(f"Rate limit hit — switching to {_next_model}", icon="⚠️")
-                                st.session_state.agent = build_agent(
-                                    st.session_state.agent_tools, SYSTEM_PROMPT, model=_next_model
-                                )
-                            else:
-                                _err_body = getattr(_agent_err, "body", None)
-                                if _err_body and isinstance(_err_body, dict):
-                                    _failed_gen = _err_body.get("error", {}).get("failed_generation", "")
-                                    _err_msg = _err_body.get("error", {}).get("message", "")
-                                else:
-                                    _failed_gen = ""
-                                    _err_msg = str(_agent_err)
-
-                                st.error(f"Agent error: {_err_msg}")
-                                if _failed_gen:
-                                    st.code(_failed_gen, language="text")
-                                with st.expander("Full error details"):
-                                    st.code(str(_agent_err), language="text")
-                                _response = "Sorry, I encountered an error processing your request. Please try rephrasing your question."
-                                st.markdown(_response)
-                                st.session_state.agent_messages.append({"role": "assistant", "content": _response})
-                                st.stop()
-
-                    _tool_calls_info = []
-                    for _rm in _result_messages:
-                        if hasattr(_rm, "tool_calls") and _rm.tool_calls:
-                            for _tc in _rm.tool_calls:
-                                _tool_calls_info.append(f"{_tc['name']}({_json.dumps(_tc['args'], ensure_ascii=False)})")
-
-                    _response = _result_messages[-1].content
-
-                st.markdown(_response)
-
-                if _tool_calls_info:
-                    with st.expander("Tools used"):
-                        for _tc_info in _tool_calls_info:
-                            st.code(_tc_info, language="json")
-
-            st.session_state.agent_messages.append({"role": "assistant", "content": _response})
