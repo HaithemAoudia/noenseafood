@@ -8,9 +8,10 @@ from email.message import EmailMessage
 from google.oauth2.service_account import Credentials
 from config import get_secret
 def print_invoice(invoice_id, format, df):
+    invoice_id = str(invoice_id).strip()
     url = f"https://api.oneup.com/v1/invoices/{invoice_id}/print.{format}"
 
-    account = df[df["invoice_id"] == invoice_id]["account"].values[0]
+    account = df[df["invoice_id"].astype(str).str.strip() == invoice_id]["account"].values[0]
 
     if account == "EU":
         API_EMAIL = get_secret('API_EMAIL_EU')

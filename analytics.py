@@ -9,10 +9,10 @@ def calculate_customer_metrics(df):
     metrics = (
         df.groupby(["customer_name"], as_index=False)
         .agg({
-            "id_x": "nunique",
+            "invoice_id": "nunique",
             "total_order_line": "sum"
         })
-        .rename(columns={"id_x": "num_transactions", "total_order_line": "total_revenue"})
+        .rename(columns={"invoice_id": "num_transactions", "total_order_line": "total_revenue"})
     )
     
     metrics["AOV"] = metrics["total_revenue"] / metrics["num_transactions"]

@@ -43,7 +43,14 @@ def apply_customer_filter(df, customers):
     if len(customers) == 0:
         return df
     else:
-        return df[df["customer_name"].isin(customers)]
+        normalized = [c.strip() for c in customers]
+        return df[df["customer_name"].str.strip().isin(normalized)]
+    
+def apply_customer_id_filter(df, customer_ids):
+    if len(customer_ids) == 0:
+        return df
+    else:
+        return df[df["customer_id"].isin(customer_ids)]
     
 
 def apply_product_filter(df, products):
@@ -52,11 +59,18 @@ def apply_product_filter(df, products):
     else:
         return df[df["product_name"].isin(products)]
     
+def apply_product_id_filter(df, product_ids):
+    if len(product_ids) == 0:
+        return df
+    else:
+        return df[df["item_id"].isin(product_ids)]
+    
 def apply_invoice_filter(df, invoice_ids):
     if len(invoice_ids) == 0:
         return df
     else:
-        return df[df["invoice_number"].isin(invoice_ids)]
+        normalized = [str(i).strip() for i in invoice_ids]
+        return df[df["invoice_number"].astype(str).str.strip().isin(normalized)]
     
 def apply_account_filter(df, accounts):
     if len(accounts) == 0:

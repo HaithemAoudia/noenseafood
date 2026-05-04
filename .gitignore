@@ -2,4 +2,8 @@ venv_noen/
 .vscode/
 __pycache__/
 *.pyc
-.env
+noenseafood.env
+agent_feature.md
+test_agent_tools.ipynb
+CLAUDE.md
+churn.ipynb
