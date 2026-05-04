@@ -14,13 +14,19 @@ import streamlit_authenticator as stauth
 import pickle
 from pathlib import Path
 import zipfile
-from filters import apply_account_filter, apply_date_filter, apply_country_filter, apply_source_filter, apply_invoice_status_filter, apply_product_family_filter, apply_customer_filter, apply_product_filter, apply_invoice_filter
+from filters import apply_account_filter, apply_customer_id_filter, apply_date_filter, apply_country_filter, apply_source_filter, apply_invoice_status_filter, apply_product_family_filter, apply_customer_filter, apply_product_filter, apply_invoice_filter
 from helpers import print_invoice, trigger_manual_refresh, send_email_invoice
 from analytics import calculate_customer_metrics, calculate_product_metrics
 import os
 from dotenv import load_dotenv
 import streamlit as st
 from config import get_secret
+import json as _json
+from langchain_core.messages import HumanMessage, AIMessage
+from agent import _load_embedding_model, _build_product_emb, _build_customer_emb
+from agent.tools import create_tools
+from agent.agent_core import build_agent, invoke_agent, MODELS
+from agent.prompts import SYSTEM_PROMPT
 # import psutil
 
 
@@ -325,22 +331,19 @@ if authentication_status:
         df_sales = pd.DataFrame(workbook.worksheet("OneUp - Invoices").get_all_records()).drop_duplicates()
         df_product = pd.DataFrame(workbook.worksheet("OneUp - Products").get_all_records()).drop_duplicates()
         df_customers = pd.DataFrame(workbook.worksheet("OneUp - Customers").get_all_records()).drop_duplicates()
-        df_transactions_sumup = pd.DataFrame(workbook.worksheet("SumUp - Product Transaction").get_all_records()).drop_duplicates()
         df_product_inventory_analysis = pd.DataFrame(workbook.worksheet("Product Inventory Consumption - Merged").get_all_records()).drop_duplicates()
         df_product_inventory = pd.DataFrame(workbook.worksheet("Product Inventory").get_all_records()).drop_duplicates()
-        return df_sales, df_product, df_customers, df_transactions_sumup, df_product_inventory_analysis, df_product_inventory
+        return df_sales, df_product, df_customers, df_product_inventory_analysis, df_product_inventory
 
     
     @st.cache_data(ttl=300, show_spinner=False)
-    def prepare_data(_df_sales, _df_product, _df_transactions_sumup):
+    def prepare_data(_df_sales, _df_product):
         """Prepare and transform data once - cached for performance"""
         df_sales = _df_sales.copy()
         df_product = _df_product.copy()
-        df_transactions_sumup = _df_transactions_sumup.copy()
-        
+
         # Convert data types
         df_sales["date"] = pd.to_datetime(df_sales["date"], errors="coerce")
-        # Ensure both paid and tax_amount are numeric before subtraction
         df_sales["paid"] = pd.to_numeric(df_sales["paid"], errors="coerce")
         df_sales["tax_amount"] = pd.to_numeric(df_sales["tax_amount"], errors="coerce")
         df_sales["paid"] = df_sales["paid"] - df_sales["tax_amount"]
@@ -350,23 +353,10 @@ if authentication_status:
         df_sales["unit_price"] = pd.to_numeric(df_sales["unit_price"], errors="coerce")
         df_sales["total_order_line"] = pd.to_numeric(df_sales["total_order_line"], errors="coerce")
         df_product["purchase_price"] = pd.to_numeric(df_product["purchase_price"], errors="coerce")
-        df_transactions_sumup["date"] = pd.to_datetime(df_transactions_sumup["timestamp"], errors="coerce")
 
-        # #Get item id to product name in forecast
-        # df_product_inventory_analysis = pd.merge(
-        #     df_product_inventory_analysis,
-        #     df_product[["id", "name", "account"]],
-        #     left_on="product_name",
-        #     right_on="name",
-        #     how="left"
-        # ).drop(columns="name")
-        
-        # Filter successful transactions only
-        df_transactions_sumup = df_transactions_sumup[df_transactions_sumup["status"] == "SUCCESSFUL"]
-        
         # Create sales order dataframe
         df_sales_order = df_sales[
-            ["invoice_id", "date", "paid", "total_order_line", "item_id", "customer_name", "country", "city", "source", "account"]
+            ["invoice_id", "invoice_number", "date", "paid", "total_order_line", "item_id", "customer_name", "country", "city", "source", "account"]
         ].drop_duplicates()
 
         # Add product name to sales orders
@@ -379,73 +369,29 @@ if authentication_status:
         ).drop(columns="id")
         df_sales_order.rename(columns={"name": "product_name"}, inplace=True)
 
-
         # Create invoices metadata dataframe
         df_invoices = df_sales[
             ["invoice_id", "invoice_number", "customer_name", "country", "city", "date", "due_date", "updated_at", "amount", "sent", "paid", "source", "account"]
         ].sort_values("updated_at", ascending=False).drop_duplicates("invoice_id")
 
-        # SumUp sales
-        df_sales_sumup = df_transactions_sumup[
-            ["id", "date", "total_price", "product_name", "customer_name", "country", "city", "source"]
-        ].drop_duplicates()
+        # Add item_family_name to sales orders
+        df_sales_order_merged = pd.merge(df_sales_order, df_product[['id','item_family_name']],
+                                         left_on="item_id", right_on="id").drop(columns="id")
 
-        df_sales_sumup.rename(columns={"total_price": "total_order_line"}, inplace=True)
-
-        df_sales_sumup["item_id"] = None
-        df_sales_sumup["paid"] = 1  # Assume SumUp transactions are paid
-        df_sales_sumup["account"] = "SumUp"
-
-        
-        # Merge sales orders
-        df_sales_order_merged = pd.concat([
-            df_sales_order.rename(columns={'invoice_id': 'id'}),
-            df_sales_sumup
-        ], ignore_index=True)
-        
-        df_sales_order_merged = pd.merge(df_sales_order_merged, df_product[['id','item_family_name']],
-                                         left_on="item_id", right_on="id")
-        
-        
         # Prepare product sales data
-        df_product_sales_oneup = df_sales[
-            ["invoice_id", "paid", "customer_name", "item_id", "country", "date", "unit_price", "total_order_line", "quantity", "source", "account"]
+        df_product_sales = df_sales[
+            ["invoice_id", "paid", "customer_id", "customer_name", "item_id", "country", "date", "unit_price", "total_order_line", "quantity", "source", "account"]
         ]
+        df_product_sales["product_name"] = df_product_sales["item_id"].map(df_product.set_index("id")["name"])
+        df_product_sales["date"] = pd.to_datetime(df_product_sales["date"])
 
-        # Merge One up Sales with One up Products to get product name based on id
-        df_product_sales_oneup["product_name"] = df_product_sales_oneup["item_id"].map(df_product.set_index("id")["name"])
+        return df_sales_order_merged, df_invoices, df_product_sales, df_product
 
-        
-        df_product_sales_sumup = df_transactions_sumup[
-            ["id", "customer_name", "product_name", "country", "timestamp", "price", "total_price", "quantity", "source"]
-        ].rename(columns={
-            "timestamp": "date",
-            "price": "unit_price",
-            "total_price": "total_order_line"
-        })
-        
-        df_product_sales_sumup["item_id"] = 0
-        df_product_sales_sumup["paid"] = None
-        df_product_sales_sumup["account"] = None
-        df_product_sales_sumup = df_product_sales_sumup[
-            ["id", "customer_name", "item_id", "product_name", "country", "date", "unit_price", "total_order_line", "quantity", "source", "account"]
-        ]
-        
-        df_product_sales_merged = pd.concat([
-            df_product_sales_oneup.rename(columns={"invoice_id": "id"}),
-            df_product_sales_sumup
-        ], ignore_index=True)
-        
-        df_product_sales_merged["date"] = pd.to_datetime(df_product_sales_merged["date"])
-        
-        return df_sales_order_merged, df_invoices, df_product_sales_merged, df_product
 
-    
-    df_sales, df_product, df_customers, df_transactions_sumup, df_product_inventory_analysis, df_product_inventory  = load_data()
+    df_sales, df_product, df_customers, df_product_inventory_analysis, df_product_inventory  = load_data()
     df_sales_order_merged, df_invoices, df_product_sales_merged, df_product_clean = prepare_data(
-        df_sales, df_product, df_transactions_sumup
+        df_sales, df_product
     )
-
 
     # st.dataframe(df_product_sales_merged)
 
@@ -515,8 +461,9 @@ if authentication_status:
             st.error("❌ Failed to trigger data refresh. Please contact admin.")
 
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🐟 Overview", "📈 Product Analytics", "👥 Customer Analytics", "🚀 Forecast", "🧾 Invoice Manager"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🐟 Overview", "📈 Product Analytics", "👥 Customer Analytics", "🚀 Forecast", "🧾 Invoice Manager", "🤖 AI Assistant"])
 
+   
 
     with tab1:
         col1, col2, col3, col4, col5, col6 = st.columns([2, 2, 2, 2, 2, 2])
@@ -845,6 +792,10 @@ if authentication_status:
         product_metrics = calculate_product_metrics(filtered_sales, df_product_clean)
         product_metrics = apply_product_family_filter(product_metrics, selected_product_family)
         
+
+
+
+
         # Top products
         if not product_metrics.empty:
             product_metrics = product_metrics[product_metrics["margin_%"] > 0]
@@ -1190,8 +1141,8 @@ if authentication_status:
                 end_date = datetime(max_date.year, 12, 31)
 
             elif selected_range == "Custom Range":
-                start_date = st.date_input("📅 Start Date", value=min_date, min_value=min_date, max_value=max_date)
-                end_date = st.date_input("📅 End Date", value=max_date, min_value=min_date, max_value=max_date)
+                start_date = st.date_input("📅 Start Date  ", value=min_date, min_value=min_date, max_value=max_date)
+                end_date = st.date_input("📅 End Date  ", value=max_date, min_value=min_date, max_value=max_date)
 
             else:
                 start_date, end_date = min_date, max_date
@@ -1220,6 +1171,7 @@ if authentication_status:
 
         st.markdown('</div>', unsafe_allow_html=True)
 
+        
         # ========== APPLY FILTERS ==========
         filtered_df = apply_date_filter(df_sales_order_merged, start_date, end_date)
         filtered_df = apply_country_filter(filtered_df, selected_country)
@@ -1230,8 +1182,7 @@ if authentication_status:
         filtered_df = apply_product_filter(filtered_df, selected_products)
         filtered_df = apply_account_filter(filtered_df, account_selected)
 
-
-
+        
         
         # ========== CUSTOMER ANALYSIS ==========
         st.header("👥 Customer Analytics")
@@ -2159,3 +2110,105 @@ if authentication_status:
         if "initial_rerun_done" not in st.session_state:
             st.session_state.initial_rerun_done = True
             st.rerun()
+
+    with tab6:
+        st.subheader("AI Assistant")
+        st.caption("Ask questions about products, customers, sales, or invoices.")
+
+        _emb_model = _load_embedding_model()
+        _prod_emb, _prod_meta = _build_product_emb(df_product, _emb_model)
+        _cust_emb, _cust_meta = _build_customer_emb(df_customers, _emb_model)
+
+        if "agent_messages" not in st.session_state:
+            st.session_state.agent_messages = []
+
+        if "agent_model_index" not in st.session_state:
+            st.session_state.agent_model_index = 0
+
+        if "agent" not in st.session_state:
+            _agent_dataframes = {
+                "df_product_sales_merged": df_product_sales_merged,
+                "df_invoices": df_invoices,
+                "df_product_clean": df_product_clean,
+            }
+            _tools = create_tools(_agent_dataframes, _prod_emb, _prod_meta, _cust_emb, _cust_meta, _emb_model)
+            st.session_state.agent_tools = _tools                                                                                                                                                                                                                                                               
+            st.session_state.agent = build_agent(_tools, SYSTEM_PROMPT, model=MODELS[st.session_state.agent_model_index]) 
+
+        if st.button("Clear conversation"):
+            st.session_state.agent_messages = []
+            st.rerun()
+
+        for _msg in st.session_state.agent_messages:
+            with st.chat_message(_msg["role"]):
+                st.markdown(_msg["content"])
+
+        if _prompt := st.chat_input("Ask about products, customers, sales, or invoices..."):
+            st.session_state.agent_messages.append({"role": "user", "content": _prompt})
+            with st.chat_message("user"):
+                st.markdown(_prompt)
+
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    _history = []
+                    for _m in st.session_state.agent_messages:
+                        if _m["role"] == "user":
+                            _history.append(HumanMessage(content=_m["content"]))
+                        else:
+                            _history.append(AIMessage(content=_m["content"]))
+
+                    def _is_rate_limit(exc):
+                        _body = getattr(exc, "body", None)
+                        if _body and isinstance(_body, dict):
+                            _msg = _body.get("error", {}).get("message", "").lower()
+                        else:
+                            _msg = str(exc).lower()
+                        return "rate limit" in _msg or "rate_limit" in _msg or "429" in _msg
+
+                    _result_messages = None
+                    while _result_messages is None:
+                        try:
+                            _result_messages = invoke_agent(st.session_state.agent, _history)
+                        except Exception as _agent_err:
+                            if _is_rate_limit(_agent_err) and st.session_state.agent_model_index < len(MODELS) - 1:
+                                st.session_state.agent_model_index += 1
+                                _next_model = MODELS[st.session_state.agent_model_index]
+                                st.toast(f"Rate limit hit — switching to {_next_model}", icon="⚠️")
+                                st.session_state.agent = build_agent(
+                                    st.session_state.agent_tools, SYSTEM_PROMPT, model=_next_model
+                                )
+                            else:
+                                _err_body = getattr(_agent_err, "body", None)
+                                if _err_body and isinstance(_err_body, dict):
+                                    _failed_gen = _err_body.get("error", {}).get("failed_generation", "")
+                                    _err_msg = _err_body.get("error", {}).get("message", "")
+                                else:
+                                    _failed_gen = ""
+                                    _err_msg = str(_agent_err)
+
+                                st.error(f"Agent error: {_err_msg}")
+                                if _failed_gen:
+                                    st.code(_failed_gen, language="text")
+                                with st.expander("Full error details"):
+                                    st.code(str(_agent_err), language="text")
+                                _response = "Sorry, I encountered an error processing your request. Please try rephrasing your question."
+                                st.markdown(_response)
+                                st.session_state.agent_messages.append({"role": "assistant", "content": _response})
+                                st.stop()
+
+                    _tool_calls_info = []
+                    for _rm in _result_messages:
+                        if hasattr(_rm, "tool_calls") and _rm.tool_calls:
+                            for _tc in _rm.tool_calls:
+                                _tool_calls_info.append(f"{_tc['name']}({_json.dumps(_tc['args'], ensure_ascii=False)})")
+
+                    _response = _result_messages[-1].content
+
+                st.markdown(_response)
+
+                if _tool_calls_info:
+                    with st.expander("Tools used"):
+                        for _tc_info in _tool_calls_info:
+                            st.code(_tc_info, language="json")
+
+            st.session_state.agent_messages.append({"role": "assistant", "content": _response})
