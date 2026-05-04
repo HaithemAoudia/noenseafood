@@ -307,10 +307,92 @@ if authentication_status:
             background-color: #cffafe;
             border-left: 4px solid #06b6d4;
         }
-        
+
         .stInfo {
             background-color: #e0f2fe;
             border-left: 4px solid #0891b2;
+        }
+
+        /* Chat message bubbles */
+        [data-testid="stChatMessage"] {
+            border-radius: 1rem;
+            padding: 1rem 1.25rem;
+            margin-bottom: 0.75rem;
+            box-shadow: 0 2px 6px rgba(14, 116, 144, 0.08);
+            border: 1px solid #e0f2fe;
+            background: linear-gradient(135deg, #ffffff 0%, #f8fdff 100%);
+        }
+
+        [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
+            background: linear-gradient(135deg, #e0f2fe 0%, #cffafe 100%);
+            border: 1px solid #bae6fd;
+        }
+
+        /* Chat welcome card */
+        .chat-welcome {
+            background: linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%);
+            border: 1px solid #bae6fd;
+            border-radius: 1rem;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(14, 116, 144, 0.1);
+            margin: 2rem 0;
+        }
+        .chat-welcome h3 {
+            background: linear-gradient(135deg, #0c4a6e 0%, #0891b2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-size: 1.4rem;
+            margin-bottom: 0.5rem;
+        }
+        .chat-welcome p {
+            color: #475569;
+            font-size: 0.95rem;
+            margin-bottom: 1.25rem;
+        }
+
+        /* Tool activity pill */
+        .tool-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.3rem 0.75rem;
+            border-radius: 1rem;
+            background: #e0f2fe;
+            border: 1px solid #bae6fd;
+            color: #0369a1;
+            font-size: 0.8rem;
+            margin: 0.25rem 0.15rem;
+        }
+        .tool-dot-done {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #10b981;
+        }
+
+        /* Chat header */
+        .chat-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+        .chat-header-title {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .chat-header-title h2 {
+            background: linear-gradient(135deg, #0c4a6e 0%, #0891b2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 0;
+            padding: 0;
+            font-size: 1.5rem;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -2112,8 +2194,21 @@ if authentication_status:
             st.rerun()
 
     with tab6:
-        st.subheader("AI Assistant")
-        st.caption("Ask questions about products, customers, sales, or invoices.")
+        _header_col1, _header_col2 = st.columns([6, 1])
+        with _header_col1:
+            st.markdown(
+                '<div class="chat-header-title">'
+                '<span style="font-size:1.75rem;">🤖</span>'
+                '<h2>AI Assistant</h2>'
+                '</div>'
+                '<p style="color:#64748b; font-size:0.9rem; margin-top:0.25rem;">'
+                'Ask questions about products, customers, sales, or invoices.</p>',
+                unsafe_allow_html=True,
+            )
+        with _header_col2:
+            if st.button("🗑️ Clear", help="Clear conversation history"):
+                st.session_state.agent_messages = []
+                st.rerun()
 
         _emb_model = _load_embedding_model()
         _prod_emb, _prod_meta = _build_product_emb(df_product, _emb_model)
@@ -2132,83 +2227,118 @@ if authentication_status:
                 "df_product_clean": df_product_clean,
             }
             _tools = create_tools(_agent_dataframes, _prod_emb, _prod_meta, _cust_emb, _cust_meta, _emb_model)
-            st.session_state.agent_tools = _tools                                                                                                                                                                                                                                                               
-            st.session_state.agent = build_agent(_tools, SYSTEM_PROMPT, model=MODELS[st.session_state.agent_model_index]) 
+            st.session_state.agent_tools = _tools
+            st.session_state.agent = build_agent(_tools, SYSTEM_PROMPT, model=MODELS[st.session_state.agent_model_index])
 
-        if st.button("Clear conversation"):
-            st.session_state.agent_messages = []
-            st.rerun()
+        if "chip_prompt" not in st.session_state:
+            st.session_state.chip_prompt = None
 
-        for _msg in st.session_state.agent_messages:
-            with st.chat_message(_msg["role"]):
-                st.markdown(_msg["content"])
+        if not st.session_state.agent_messages:
+            st.markdown(
+                '<div class="chat-welcome">'
+                '<h3>👋 Welcome!</h3>'
+                '<p>I can help you explore sales data, find products and customers, '
+                'check invoices, and more. Try one of the suggestions below or type your own question.</p>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            _suggestions = [
+                "Top 5 products last month?",
+                "Customer revenue breakdown",
+                "Find recent invoices",
+                "How is salmon performing?",
+            ]
+            _chip_cols = st.columns(len(_suggestions))
+            for _i, _suggestion in enumerate(_suggestions):
+                with _chip_cols[_i]:
+                    if st.button(_suggestion, key=f"chip_{_i}", use_container_width=True):
+                        st.session_state.chip_prompt = _suggestion
+                        st.rerun()
 
-        if _prompt := st.chat_input("Ask about products, customers, sales, or invoices..."):
-            st.session_state.agent_messages.append({"role": "user", "content": _prompt})
-            with st.chat_message("user"):
-                st.markdown(_prompt)
+        _chat_container = st.container()
+        _prompt = st.chat_input("Ask about products, customers, sales, or invoices...")
 
-            with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    _history = []
-                    for _m in st.session_state.agent_messages:
-                        if _m["role"] == "user":
-                            _history.append(HumanMessage(content=_m["content"]))
-                        else:
-                            _history.append(AIMessage(content=_m["content"]))
+        if st.session_state.chip_prompt:
+            _prompt = st.session_state.chip_prompt
+            st.session_state.chip_prompt = None
 
-                    def _is_rate_limit(exc):
-                        _body = getattr(exc, "body", None)
-                        if _body and isinstance(_body, dict):
-                            _msg = _body.get("error", {}).get("message", "").lower()
-                        else:
-                            _msg = str(exc).lower()
-                        return "rate limit" in _msg or "rate_limit" in _msg or "429" in _msg
+        with _chat_container:
+            for _msg in st.session_state.agent_messages:
+                with st.chat_message(_msg["role"]):
+                    st.markdown(_msg["content"])
+                    if _msg["role"] == "assistant" and _msg.get("tools"):
+                        _pills_html = ""
+                        for _tn in _msg["tools"]:
+                            _pills_html += f'<span class="tool-pill"><span class="tool-dot-done"></span>{_tn}</span>'
+                        st.markdown(f'<div style="margin-top:0.5rem;">{_pills_html}</div>', unsafe_allow_html=True)
 
-                    _result_messages = None
-                    while _result_messages is None:
-                        try:
-                            _result_messages = invoke_agent(st.session_state.agent, _history)
-                        except Exception as _agent_err:
-                            if _is_rate_limit(_agent_err) and st.session_state.agent_model_index < len(MODELS) - 1:
-                                st.session_state.agent_model_index += 1
-                                _next_model = MODELS[st.session_state.agent_model_index]
-                                st.toast(f"Rate limit hit — switching to {_next_model}", icon="⚠️")
-                                st.session_state.agent = build_agent(
-                                    st.session_state.agent_tools, SYSTEM_PROMPT, model=_next_model
-                                )
+            if _prompt:
+                st.session_state.agent_messages.append({"role": "user", "content": _prompt})
+                with st.chat_message("user"):
+                    st.markdown(_prompt)
+
+                with st.chat_message("assistant"):
+                    with st.spinner("Thinking..."):
+                        _history = []
+                        for _m in st.session_state.agent_messages:
+                            if _m["role"] == "user":
+                                _history.append(HumanMessage(content=_m["content"]))
                             else:
-                                _err_body = getattr(_agent_err, "body", None)
-                                if _err_body and isinstance(_err_body, dict):
-                                    _failed_gen = _err_body.get("error", {}).get("failed_generation", "")
-                                    _err_msg = _err_body.get("error", {}).get("message", "")
+                                _history.append(AIMessage(content=_m["content"]))
+
+                        def _is_rate_limit(exc):
+                            _body = getattr(exc, "body", None)
+                            if _body and isinstance(_body, dict):
+                                _msg = _body.get("error", {}).get("message", "").lower()
+                            else:
+                                _msg = str(exc).lower()
+                            return "rate limit" in _msg or "rate_limit" in _msg or "429" in _msg
+
+                        _result_messages = None
+                        while _result_messages is None:
+                            try:
+                                _result_messages = invoke_agent(st.session_state.agent, _history)
+                            except Exception as _agent_err:
+                                if _is_rate_limit(_agent_err) and st.session_state.agent_model_index < len(MODELS) - 1:
+                                    st.session_state.agent_model_index += 1
+                                    _next_model = MODELS[st.session_state.agent_model_index]
+                                    st.toast(f"Rate limit hit — switching to {_next_model}", icon="⚠️")
+                                    st.session_state.agent = build_agent(
+                                        st.session_state.agent_tools, SYSTEM_PROMPT, model=_next_model
+                                    )
                                 else:
-                                    _failed_gen = ""
-                                    _err_msg = str(_agent_err)
+                                    _err_body = getattr(_agent_err, "body", None)
+                                    if _err_body and isinstance(_err_body, dict):
+                                        _failed_gen = _err_body.get("error", {}).get("failed_generation", "")
+                                        _err_msg = _err_body.get("error", {}).get("message", "")
+                                    else:
+                                        _failed_gen = ""
+                                        _err_msg = str(_agent_err)
 
-                                st.error(f"Agent error: {_err_msg}")
-                                if _failed_gen:
-                                    st.code(_failed_gen, language="text")
-                                with st.expander("Full error details"):
-                                    st.code(str(_agent_err), language="text")
-                                _response = "Sorry, I encountered an error processing your request. Please try rephrasing your question."
-                                st.markdown(_response)
-                                st.session_state.agent_messages.append({"role": "assistant", "content": _response})
-                                st.stop()
+                                    st.error(f"Agent error: {_err_msg}")
+                                    if _failed_gen:
+                                        st.code(_failed_gen, language="text")
+                                    with st.expander("Full error details"):
+                                        st.code(str(_agent_err), language="text")
+                                    _response = "Sorry, I encountered an error processing your request. Please try rephrasing your question."
+                                    st.markdown(_response)
+                                    st.session_state.agent_messages.append({"role": "assistant", "content": _response})
+                                    st.stop()
 
-                    _tool_calls_info = []
-                    for _rm in _result_messages:
-                        if hasattr(_rm, "tool_calls") and _rm.tool_calls:
-                            for _tc in _rm.tool_calls:
-                                _tool_calls_info.append(f"{_tc['name']}({_json.dumps(_tc['args'], ensure_ascii=False)})")
+                        _tool_names = []
+                        for _rm in _result_messages:
+                            if hasattr(_rm, "tool_calls") and _rm.tool_calls:
+                                for _tc in _rm.tool_calls:
+                                    _tool_names.append(_tc["name"])
 
-                    _response = _result_messages[-1].content
+                        _response = _result_messages[-1].content
 
-                st.markdown(_response)
+                    st.markdown(_response)
 
-                if _tool_calls_info:
-                    with st.expander("Tools used"):
-                        for _tc_info in _tool_calls_info:
-                            st.code(_tc_info, language="json")
+                    if _tool_names:
+                        _pills_html = ""
+                        for _tn in _tool_names:
+                            _pills_html += f'<span class="tool-pill"><span class="tool-dot-done"></span>{_tn}</span>'
+                        st.markdown(f'<div style="margin-top:0.5rem;">{_pills_html}</div>', unsafe_allow_html=True)
 
-            st.session_state.agent_messages.append({"role": "assistant", "content": _response})
+                st.session_state.agent_messages.append({"role": "assistant", "content": _response, "tools": _tool_names if _tool_names else []})
