@@ -130,7 +130,7 @@ def full_data_load(type, sheet_name, google_cred):
 
                 # Check if there are any row where created date is not 2025 for invoices
                 if type == 'invoices':
-                    df = df[df["created_at"] >= "2025-01-01"]
+                    df = df[df["created_at"] >= "2026-01-01"]
 
 
                 if df.empty:
