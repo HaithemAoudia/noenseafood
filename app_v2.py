@@ -111,9 +111,28 @@ if authentication_status:
         .stApp {
             background-color: #f0f9ff;
         }
-        
+
         .main {
             background-color: #f0f9ff;
+        }
+
+        .stSpinner,
+        .stSpinner > div,
+        .stSpinner > div > div,
+        [data-testid="stSpinner"],
+        [data-testid="stSpinner"] > div,
+        [data-testid="stStatusWidget"],
+        [data-testid="stStatusWidget"] > div,
+        [data-testid="stNotification"],
+        [data-testid="stNotification"] > div,
+        .stAlert,
+        .stNotification,
+        .stCacheSpinner,
+        div[data-testid="stCachedStFunctionWarning"],
+        div[data-testid="stCachedStFunctionWarning"] > div {
+            background-color: transparent !important;
+            background: transparent !important;
+            box-shadow: none !important;
         }
         
         [data-testid="stAppViewContainer"] {
@@ -470,10 +489,11 @@ if authentication_status:
         return df_sales_order_merged, df_invoices, df_product_sales, df_product
 
 
-    df_sales, df_product, df_customers, df_product_inventory_analysis, df_product_inventory  = load_data()
-    df_sales_order_merged, df_invoices, df_product_sales_merged, df_product_clean = prepare_data(
-        df_sales, df_product
-    )
+    with st.spinner("Setting up your environment... Hang tight!"):
+        df_sales, df_product, df_customers, df_product_inventory_analysis, df_product_inventory  = load_data()
+        df_sales_order_merged, df_invoices, df_product_sales_merged, df_product_clean = prepare_data(
+            df_sales, df_product
+        )
 
     # st.dataframe(df_product_sales_merged)
 
