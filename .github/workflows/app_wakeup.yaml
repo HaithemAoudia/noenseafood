@@ -1,0 +1,29 @@
+name: App Wakeup
+
+on:
+  schedule:
+    # Every 10 hours
+    - cron: '0 */10 * * *'
+
+  workflow_dispatch:
+
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+    environment: api_credentials  # Use the environment you created
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run script
+        run: python keep_app_active.py
+
