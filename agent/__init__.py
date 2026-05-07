@@ -8,16 +8,16 @@ from agent.agent_core import build_agent, invoke_agent
 from agent.prompts import SYSTEM_PROMPT
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Loading AI models...")
 def _load_embedding_model():
     return get_embedding_model()
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Preparing product knowledge...")
 def _build_product_emb(_df_product, _model):
     return build_product_embeddings(_df_product, _model)
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Preparing customer knowledge...")
 def _build_customer_emb(_df_customers, _model):
     return build_customer_embeddings(_df_customers, _model)
