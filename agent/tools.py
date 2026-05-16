@@ -114,12 +114,16 @@ def create_tools(dataframes, product_embeddings, product_metadata, customer_embe
                 revenue=("total_order_line", "sum"),
             ).reset_index()
 
+        total_revenue = round(agg["revenue"].sum(), 2)
+        total_quantity = round(agg["quantity"].sum(), 1)
+
         ascending = sort_order == "asc"
         agg = agg.sort_values("revenue", ascending=ascending).head(30)
         agg["revenue"] = agg["revenue"].round(2)
         agg["quantity"] = agg["quantity"].round(1)
 
-        return agg.to_markdown(index=False)
+        header = f"**Total Revenue:** €{total_revenue:,.2f} | **Total Quantity:** {total_quantity:,.1f}\n\n"
+        return header + agg.to_markdown(index=False)
 
     @tool
     def get_invoice(

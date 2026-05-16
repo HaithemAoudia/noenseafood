@@ -391,6 +391,31 @@ if authentication_status:
             border-radius: 50%;
             background: #10b981;
         }
+        .tool-detail {
+            display: inline-block;
+            margin: 0.25rem 0.15rem;
+        }
+        .tool-detail[open] {
+            display: block;
+        }
+        .tool-detail summary {
+            cursor: pointer;
+            list-style: none;
+        }
+        .tool-detail summary::-webkit-details-marker {
+            display: none;
+        }
+        .tool-args {
+            margin: 0.25rem 0 0.5rem 0.5rem;
+            padding: 0.4rem 0.75rem;
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 0.5rem;
+            font-size: 0.75rem;
+            color: #0c4a6e;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
 
         /* Chat header */
         .chat-header {
@@ -2288,8 +2313,17 @@ if authentication_status:
                     st.markdown(_msg["content"])
                     if _msg["role"] == "assistant" and _msg.get("tools"):
                         _pills_html = ""
-                        for _tn in _msg["tools"]:
-                            _pills_html += f'<span class="tool-pill"><span class="tool-dot-done"></span>{_tn}</span>'
+                        for _tc in _msg["tools"]:
+                            if isinstance(_tc, str):
+                                _pills_html += f'<span class="tool-pill"><span class="tool-dot-done"></span>{_tc}</span>'
+                            else:
+                                _args_str = "\n".join(f"{k} = {v!r}" for k, v in _tc["args"].items())
+                                _pills_html += (
+                                    f'<details class="tool-detail">'
+                                    f'<summary class="tool-pill"><span class="tool-dot-done"></span>{_tc["name"]}</summary>'
+                                    f'<pre class="tool-args">{_args_str}</pre>'
+                                    f'</details>'
+                                )
                         st.markdown(f'<div style="margin-top:0.5rem;">{_pills_html}</div>', unsafe_allow_html=True)
 
             if _prompt:
@@ -2345,20 +2379,26 @@ if authentication_status:
                                     st.session_state.agent_messages.append({"role": "assistant", "content": _response})
                                     st.stop()
 
-                        _tool_names = []
+                        _tool_calls_info = []
                         for _rm in _result_messages:
                             if hasattr(_rm, "tool_calls") and _rm.tool_calls:
                                 for _tc in _rm.tool_calls:
-                                    _tool_names.append(_tc["name"])
+                                    _tool_calls_info.append({"name": _tc["name"], "args": _tc.get("args", {})})
 
                         _response = _result_messages[-1].content
 
                     st.markdown(_response)
 
-                    if _tool_names:
+                    if _tool_calls_info:
                         _pills_html = ""
-                        for _tn in _tool_names:
-                            _pills_html += f'<span class="tool-pill"><span class="tool-dot-done"></span>{_tn}</span>'
+                        for _tc in _tool_calls_info:
+                            _args_str = "\n".join(f"{k} = {v!r}" for k, v in _tc["args"].items())
+                            _pills_html += (
+                                f'<details class="tool-detail">'
+                                f'<summary class="tool-pill"><span class="tool-dot-done"></span>{_tc["name"]}</summary>'
+                                f'<pre class="tool-args">{_args_str}</pre>'
+                                f'</details>'
+                            )
                         st.markdown(f'<div style="margin-top:0.5rem;">{_pills_html}</div>', unsafe_allow_html=True)
 
-                st.session_state.agent_messages.append({"role": "assistant", "content": _response, "tools": _tool_names if _tool_names else []})
+                st.session_state.agent_messages.append({"role": "assistant", "content": _response, "tools": _tool_calls_info if _tool_calls_info else []})
